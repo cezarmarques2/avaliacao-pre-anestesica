@@ -53,9 +53,13 @@ const HOSPITAIS = [
   { value: "hospital_memorial_star", label: "Hospital Memorial Star" },
   { value: "hospital_esperanca_recife", label: "Hospital Esperança Recife" },
   { value: "hospital_esperanca_olinda", label: "Hospital Esperança Olinda" },
+  { value: "hospital_chur_unimed", label: "Complexo Hospitalar Unimed (CHUR)" },
+  { value: "hospital_hgmi", label: "HGMI" },
 ];
 
 // E-mail de solicitação de guia de honorários por hospital.
+// Quando o valor é um objeto { urgencia, eletiva }, o e-mail usado depende do
+// campo "Caráter de urgência" preenchido na primeira etapa do formulário.
 const EMAIL_GUIA_POR_HOSPITAL = {
   real_hospital_portugues: "matheus.ferreira@rhp.com.br",
   hospital_santa_jana: "sara.santos@santajoanarecife.com.br,relacionamentomedico@santajoanarecife.com.br",
@@ -65,6 +69,11 @@ const EMAIL_GUIA_POR_HOSPITAL = {
   hospital_memorial_star: "concierge@memorialstar.com.br",
   hospital_esperanca_recife: "crm@hospitalesperanca.com.br",
   hospital_esperanca_olinda: "luiza.batista@esperancaolinda.com.br",
+  hospital_chur_unimed: {
+    urgencia: "aut.anestesia.hur3@unimedrecife.com.br",
+    eletiva: "postobloco.hur3@unimedrecife.com.br",
+  },
+  hospital_hgmi: "aut.anestesia.hgmi@unimedrecife.com.br",
 };
 
 const ESPECIALIDADES = [
@@ -600,12 +609,16 @@ function App() {
       `Registro: ${form.registroPaciente || ""}`;
 
     const assunto = `Solicitação de guia de honorários - ${form.nomePaciente || "paciente"}`;
-    const destinatario = EMAIL_GUIA_POR_HOSPITAL[form.hospital] || "";
+    const emailConfig = EMAIL_GUIA_POR_HOSPITAL[form.hospital];
+    const destinatario =
+      typeof emailConfig === "object" && emailConfig !== null
+        ? (form.urgencia ? emailConfig.urgencia : emailConfig.eletiva)
+        : emailConfig || "";
 
-    const mailto = `mailto:${destinatario}?subject=${encodeURIComponent(
-      assunto
-    )}&body=${encodeURIComponent(corpo)}`;
-    window.location.href = mailto;
+    const gmailCompose = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
+      destinatario
+    )}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+    window.open(gmailCompose, "_blank", "noopener");
   };
 
   return (
