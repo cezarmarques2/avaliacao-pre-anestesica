@@ -1,0 +1,1602 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Avaliação Pré-Anestésica</title>
+<link rel="icon" href="data:,">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #F2F5F6; }
+  #root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect } = React;
+
+// Armazenamento local do navegador (substitui o window.storage do ambiente Claude,
+// que só existe dentro do chat). Aqui os dados ficam salvos no localStorage do
+// navegador de quem estiver usando o site.
+const storage = {
+  async get(key) {
+    const v = localStorage.getItem(key);
+    return v !== null ? { key, value: v } : null;
+  },
+  async set(key, value) {
+    localStorage.setItem(key, value);
+    return { key, value };
+  },
+};
+
+const CONVENIOS = [
+  "ADUFEPE", "AIRES", "AMEPE-CAMPE", "AMIL", "ASSEFAZ", "BANCO CENTRAL",
+  "BRADESCO OPERADORA", "BRADESCO SAUDE", "BRASIL SAÚDE", "CAMED",
+  "CAPE-SAÚDE", "CASSI", "CBTU", "COMPESA", "CONAB", "FISCO SAÚDE", "FUSEX",
+  "GAMA", "GEAP", "AERONÁUTICA", "PM PE", "NAVAL", "IMIP", "IRH",
+  "LIFE EMPRESARIAL", "LUMINAR", "MEDSENIOR", "MEDISERVICE", "NOTREDAME",
+  "NOVA SAÚDE", "PLAN-ASSIST", "POSTAL SAÚDE", "REALMED", "SUS RHP",
+  "SAÚDE BLUE", "SAÚDE CAIXA", "SAÚDE RECIFE", "SELECT", "SES", "STELANTIS",
+  "SULAMÉRICA", "TRF", "UNAFISCO", "UNIMED RECIFE", "UNIMED INTERCÂMBIO",
+].map((c) => ({ value: c, label: c }));
+
+const HOSPITAIS = [
+  { value: "real_hospital_portugues", label: "Real Hospital Português" },
+  { value: "hospital_santa_jana", label: "Hospital Santa Jana" },
+  { value: "hospital_jayme_da_fonte", label: "Hospital Jayme da Fonte" },
+  { value: "hospital_memorial_sao_jose", label: "Hospital Memorial São José" },
+  { value: "hospital_sao_marcos", label: "Hospital São Marcos" },
+  { value: "hospital_memorial_star", label: "Hospital Memorial Star" },
+  { value: "hospital_esperanca_recife", label: "Hospital Esperança Recife" },
+  { value: "hospital_esperanca_olinda", label: "Hospital Esperança Olinda" },
+];
+
+// E-mail de solicitação de guia de honorários por hospital.
+const EMAIL_GUIA_POR_HOSPITAL = {
+  real_hospital_portugues: "matheus.ferreira@rhp.com.br",
+  hospital_santa_jana: "sara.santos@santajoanarecife.com.br,relacionamentomedico@santajoanarecife.com.br",
+  hospital_jayme_da_fonte: "sac@jaymedafonte.com.br",
+  hospital_memorial_sao_jose: "ieda.oliveira@hospitalmemorial.com.br",
+  hospital_sao_marcos: "paula.catarina@hospitalsaomarcos.com.br",
+  hospital_memorial_star: "concierge@memorialstar.com.br",
+  hospital_esperanca_recife: "crm@hospitalesperanca.com.br",
+  hospital_esperanca_olinda: "luiza.batista@esperancaolinda.com.br",
+};
+
+const ESPECIALIDADES = [
+  { value: "geral_abdominal", label: "Cirurgia geral / aparelho digestivo" },
+  { value: "cabeca_pescoco", label: "Cirurgia de cabeça e pescoço" },
+  { value: "craniomaxilofacial", label: "Cirurgia craniomaxilofacial" },
+  { value: "neurocirurgia", label: "Neurocirurgia" },
+  { value: "cardiaca", label: "Cirurgia cardíaca" },
+  { value: "toracica", label: "Cirurgia torácica" },
+  { value: "vascular", label: "Cirurgia vascular" },
+  { value: "ortopedica", label: "Cirurgia ortopédica" },
+  { value: "coluna", label: "Cirurgia de coluna" },
+  { value: "urologica", label: "Cirurgia urológica" },
+  { value: "ginecologica", label: "Cirurgia ginecológica" },
+  { value: "obstetrica", label: "Cirurgia obstétrica (ex: cesárea)" },
+  { value: "bariatrica", label: "Cirurgia bariátrica" },
+  { value: "oncologica_abdominal", label: "Cirurgia oncológica (abdominal/pélvica)" },
+  { value: "plastica", label: "Cirurgia plástica" },
+  { value: "oftalmologica", label: "Cirurgia oftalmológica" },
+  { value: "otorrino", label: "Cirurgia otorrinolaringológica" },
+  { value: "pediatrica", label: "Cirurgia pediátrica" },
+  { value: "dermatologica", label: "Cirurgia dermatológica" },
+  { value: "outra_periferica", label: "Outra — porte pequeno/periférico" },
+];
+
+// Mapeia a especialidade para a categoria usada nos cálculos de RCRI e ARISCAT
+// (originalmente validados para cirurgia não cardíaca: periférica / intraperitoneal /
+// intratorácica / vascular suprainguinal). Cardíaca fica fora do escopo original dos dois
+// escores — mantida aqui como "intratorácica" apenas como aproximação de porte.
+const CATEGORIA_RISCO = {
+  geral_abdominal: "intraperitoneal",
+  cabeca_pescoco: "periferica",
+  craniomaxilofacial: "periferica",
+  neurocirurgia: "periferica",
+  cardiaca: "intratoracica",
+  toracica: "intratoracica",
+  vascular: "vascular",
+  ortopedica: "periferica",
+  coluna: "periferica",
+  urologica: "periferica",
+  ginecologica: "intraperitoneal",
+  obstetrica: "intraperitoneal",
+  bariatrica: "intraperitoneal",
+  oncologica_abdominal: "intraperitoneal",
+  plastica: "periferica",
+  oftalmologica: "periferica",
+  otorrino: "periferica",
+  pediatrica: "periferica",
+  dermatologica: "periferica",
+  outra_periferica: "periferica",
+};
+
+const STEPS = [
+  "Paciente e cirurgia",
+  "Cardiovascular",
+  "Pulmonar",
+  "Renal e hepático",
+  "Endócrino e hematológico",
+  "Neurológico e osteomuscular",
+  "Via aérea",
+  "Hábitos e passado cirúrgico",
+  "Resultado",
+];
+
+const initialForm = {
+  nomePaciente: "",
+  registroPaciente: "",
+  nomeCirurgiao: "",
+  hospital: "",
+  dataCirurgia: "",
+  horarioCirurgia: "",
+  convenio: "",
+  nomeProcedimento: "",
+  idade: "",
+  sexo: "",
+  peso: "",
+  altura: "",
+  tipoIncisao: "",
+  duracaoHoras: "",
+  urgencia: false,
+
+  dac: false,
+  icc: false,
+  avcPrevio: false,
+  has: false,
+  arritmia: false,
+  valvopatia: false,
+  dmInsulina: false,
+  mets: "",
+
+  dpoc: false,
+  asma: false,
+  tabagismoAtual: false,
+  spo2: "",
+  infeccaoResp: false,
+  ronco: false,
+  sonolencia: false,
+  apneiaObservada: false,
+
+  drc: false,
+  dialise: false,
+  creatinina: "",
+  hepatopatia: false,
+  childPughSinais: false,
+
+  dmTipo: "",
+  controleGlicemico: "",
+  tireoidopatia: false,
+  hb: "",
+  coagulopatia: false,
+  anticoagulante: false,
+
+  neuroDoenca: false,
+  epilepsia: false,
+  doencaNeuromuscular: false,
+  mobilidadeReduzida: false,
+  doencaColuna: false,
+
+  mallampati: "",
+  aberturaBucal: "",
+  mobilidadeCervical: "",
+  circunferenciaCervical: "",
+  proteseDentaria: false,
+
+  tabagismoAnos: "",
+  etilismo: false,
+  drogas: false,
+  cirurgiasPrevias: false,
+  intercorrenciaAnestesica: false,
+  historiaFamiliarHM: false,
+  medicacoesUso: "",
+
+  asa: "",
+};
+
+function Toggle({ label, value, onChange, hint }) {
+  return (
+    <div className="field">
+      <div className="toggle-row">
+        <div>
+          <label>{label}</label>
+          {hint && <div className="hint">{hint}</div>}
+        </div>
+        <div className="toggle-btns">
+          <button
+            type="button"
+            className={`toggle-btn ${value === true ? "active" : ""}`}
+            onClick={() => onChange(true)}
+          >
+            Sim
+          </button>
+          <button
+            type="button"
+            className={`toggle-btn ${value === false ? "active" : ""}`}
+            onClick={() => onChange(false)}
+          >
+            Não
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NumField({ label, value, onChange, placeholder, suffix, hint }) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      {hint && <div className="hint">{hint}</div>}
+      <div className="input-suffix-wrap">
+        <input
+          type="number"
+          inputMode="decimal"
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {suffix && <span className="suffix">{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
+function TextField({ label, value, onChange, placeholder, hint, onBlur, listId, listOptions }) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      {hint && <div className="hint">{hint}</div>}
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        list={listId}
+        autoComplete="off"
+      />
+      {listId && listOptions && (
+        <datalist id={listId}>
+          {listOptions.map((opt) => (
+            <option key={opt} value={opt} />
+          ))}
+        </datalist>
+      )}
+    </div>
+  );
+}
+
+function TimeField({ label, value, onChange, hint }) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      {hint && <div className="hint">{hint}</div>}
+      <input type="time" value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function DateField({ label, value, onChange, hint }) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      {hint && <div className="hint">{hint}</div>}
+      <input type="date" value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function TextAreaField({ label, value, onChange, placeholder, hint }) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      {hint && <div className="hint">{hint}</div>}
+      <textarea
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        rows={4}
+      />
+    </div>
+  );
+}
+
+function SelField({ label, value, onChange, options, hint }) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      {hint && <div className="hint">{hint}</div>}
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Selecione...</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <div className="section-card">
+      <h3>{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function riskBand(level) {
+  if (level === "baixo") return { cls: "low", label: "Risco baixo" };
+  if (level === "moderado") return { cls: "mid", label: "Risco moderado" };
+  return { cls: "high", label: "Risco alto" };
+}
+
+function ScoreCard({ nome, valor, detalhe, nivel, base }) {
+  const band = riskBand(nivel);
+  return (
+    <div className={`score-card ${band.cls}`}>
+      <div className="score-top">
+        <span className="score-nome">{nome}</span>
+        <span className={`score-pill ${band.cls}`}>{band.label}</span>
+      </div>
+      <div className="score-valor">{valor}</div>
+      <div className="score-detalhe">{detalhe}</div>
+      {base && <div className="score-base">{base}</div>}
+    </div>
+  );
+}
+
+function App() {
+  const [step, setStep] = useState(0);
+  const [form, setForm] = useState(initialForm);
+  const [cirurgioesHistorico, setCirurgioesHistorico] = useState([]);
+
+  const CIRURGIOES_KEY = "cirurgioes-historico";
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await storage.get(CIRURGIOES_KEY);
+        setCirurgioesHistorico(res ? JSON.parse(res.value) : []);
+      } catch {
+        setCirurgioesHistorico([]);
+      }
+    })();
+  }, []);
+
+  const salvarCirurgiaoNoHistorico = async () => {
+    const nome = form.nomeCirurgiao.trim();
+    if (!nome || cirurgioesHistorico.includes(nome)) return;
+    const atualizado = [...cirurgioesHistorico, nome].sort((a, b) =>
+      a.localeCompare(b, "pt-BR")
+    );
+    setCirurgioesHistorico(atualizado);
+    try {
+      await storage.set(CIRURGIOES_KEY, JSON.stringify(atualizado));
+    } catch {
+      // se falhar, o nome ainda fica disponível nesta sessão
+    }
+  };
+
+  const set = (key) => (val) => setForm((f) => ({ ...f, [key]: val }));
+
+  const num = (v) => (v === "" || v === null || v === undefined ? null : parseFloat(v));
+
+  const idade = num(form.idade);
+  const peso = num(form.peso);
+  const altura = num(form.altura);
+  const spo2 = num(form.spo2);
+  const creatinina = num(form.creatinina);
+  const hb = num(form.hb);
+  const duracao = num(form.duracaoHoras);
+  const circCervical = num(form.circunferenciaCervical);
+
+  const bmi = useMemo(() => {
+    if (!peso || !altura) return null;
+    const alturaM = altura > 3 ? altura / 100 : altura;
+    return peso / (alturaM * alturaM);
+  }, [peso, altura]);
+
+  const bmiClass = useMemo(() => {
+    if (bmi === null) return "";
+    if (bmi < 18.5) return "abaixo do peso";
+    if (bmi < 25) return "peso normal";
+    if (bmi < 30) return "sobrepeso";
+    if (bmi < 35) return "obesidade grau I";
+    if (bmi < 40) return "obesidade grau II";
+    return "obesidade grau III";
+  }, [bmi]);
+
+  const categoriaRisco = CATEGORIA_RISCO[form.tipoIncisao] || "";
+
+  const rcri = useMemo(() => {
+    const highRiskSurgery = ["intraperitoneal", "intratoracica", "vascular"].includes(
+      categoriaRisco
+    );
+    let pts = 0;
+    if (highRiskSurgery) pts++;
+    if (form.dac) pts++;
+    if (form.icc) pts++;
+    if (form.avcPrevio) pts++;
+    if (form.dmInsulina) pts++;
+    if (creatinina !== null && creatinina > 2.0) pts++;
+
+    let classe, riscoPct, nivel;
+    if (pts === 0) {
+      classe = "I";
+      riscoPct = "0,4%";
+      nivel = "baixo";
+    } else if (pts === 1) {
+      classe = "II";
+      riscoPct = "≈0,9%";
+      nivel = "baixo";
+    } else if (pts === 2) {
+      classe = "III";
+      riscoPct = "≈6,6%";
+      nivel = "moderado";
+    } else {
+      classe = "IV";
+      riscoPct = "≥11%";
+      nivel = "alto";
+    }
+    return { pts, classe, riscoPct, nivel };
+  }, [categoriaRisco, form.dac, form.icc, form.avcPrevio, form.dmInsulina, creatinina]);
+
+  const stopBang = useMemo(() => {
+    let pts = 0;
+    if (form.ronco) pts++;
+    if (form.sonolencia) pts++;
+    if (form.apneiaObservada) pts++;
+    if (form.has) pts++;
+    if (bmi !== null && bmi > 35) pts++;
+    if (idade !== null && idade > 50) pts++;
+    if (circCervical !== null && circCervical > 40) pts++;
+    if (form.sexo === "masculino") pts++;
+
+    let nivel, label;
+    if (pts <= 2) {
+      nivel = "baixo";
+      label = "baixo risco de AOS";
+    } else if (pts <= 4) {
+      nivel = "moderado";
+      label = "risco intermediário de AOS";
+    } else {
+      nivel = "alto";
+      label = "alto risco de AOS";
+    }
+    return { pts, nivel, label };
+  }, [form.ronco, form.sonolencia, form.apneiaObservada, form.has, bmi, idade, circCervical, form.sexo]);
+
+  const ariscat = useMemo(() => {
+    let pts = 0;
+    if (idade !== null) {
+      if (idade > 80) pts += 16;
+      else if (idade >= 51) pts += 3;
+    }
+    if (spo2 !== null) {
+      if (spo2 <= 90) pts += 24;
+      else if (spo2 <= 95) pts += 8;
+    }
+    if (form.infeccaoResp) pts += 17;
+    if (hb !== null && hb <= 10) pts += 11;
+    if (categoriaRisco === "intratoracica") pts += 24;
+    else if (categoriaRisco === "intraperitoneal") pts += 15;
+    if (duracao !== null) {
+      if (duracao > 3) pts += 23;
+      else if (duracao >= 2) pts += 16;
+    }
+    if (form.urgencia) pts += 8;
+
+    let nivel, riscoPct;
+    if (pts < 26) {
+      nivel = "baixo";
+      riscoPct = "≈1,6%";
+    } else if (pts < 45) {
+      nivel = "moderado";
+      riscoPct = "≈13,3%";
+    } else {
+      nivel = "alto";
+      riscoPct = "≈42%";
+    }
+    return { pts, nivel, riscoPct };
+  }, [idade, spo2, form.infeccaoResp, hb, categoriaRisco, duracao, form.urgencia]);
+
+  const viaAereaAlerta = useMemo(() => {
+    const sinais = [];
+    if (form.mallampati === "3" || form.mallampati === "4") sinais.push("Mallampati III/IV");
+    if (form.aberturaBucal === "reduzida") sinais.push("abertura bucal reduzida");
+    if (form.mobilidadeCervical === "reduzida") sinais.push("mobilidade cervical reduzida");
+    if (circCervical !== null && circCervical > 40) sinais.push("circunferência cervical aumentada");
+    return sinais;
+  }, [form.mallampati, form.aberturaBucal, form.mobilidadeCervical, circCervical]);
+
+  const podeCalcular = idade !== null && form.sexo && peso !== null && altura !== null;
+
+  const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  const back = () => setStep((s) => Math.max(s - 1, 0));
+  const reset = () => {
+    setForm(initialForm);
+    setStep(0);
+  };
+
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const fmtICS = (dt) =>
+    `${dt.getFullYear()}${pad2(dt.getMonth() + 1)}${pad2(dt.getDate())}T${pad2(
+      dt.getHours()
+    )}${pad2(dt.getMinutes())}00`;
+
+  const adicionarAoCalendario = () => {
+    if (!form.dataCirurgia) return;
+    const [y, m, d] = form.dataCirurgia.split("-").map(Number);
+    const [hh, mm] = (form.horarioCirurgia || "07:00").split(":").map(Number);
+    const start = new Date(y, m - 1, d, hh, mm);
+    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+    const titulo = form.nomePaciente || "Avaliação pré-anestésica";
+    const hospitalLabel = HOSPITAIS.find((h) => h.value === form.hospital)?.label || "";
+    const descricaoPartes = [];
+    if (form.convenio) descricaoPartes.push(`Convênio: ${form.convenio}`);
+    if (form.tipoIncisao)
+      descricaoPartes.push(
+        `Especialidade: ${ESPECIALIDADES.find((e) => e.value === form.tipoIncisao)?.label || ""}`
+      );
+
+    const linhas = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Avaliacao Pre-Anestesica//PT-BR",
+      "CALSCALE:GREGORIAN",
+      "BEGIN:VEVENT",
+      `UID:${Date.now()}@avaliacao-pre-anestesica`,
+      `DTSTAMP:${fmtICS(new Date())}`,
+      `DTSTART:${fmtICS(start)}`,
+      `DTEND:${fmtICS(end)}`,
+      `SUMMARY:${titulo}`,
+      hospitalLabel && `LOCATION:${hospitalLabel}`,
+      descricaoPartes.length && `DESCRIPTION:${descricaoPartes.join(" | ")}`,
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].filter(Boolean);
+
+    const blob = new Blob([linhas.join("\r\n")], {
+      type: "text/calendar;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${titulo.replace(/\s+/g, "_")}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const solicitarGuiaPorEmail = () => {
+    const dataHora = form.dataCirurgia
+      ? `${form.dataCirurgia.split("-").reverse().join("/")}${
+          form.horarioCirurgia ? " às " + form.horarioCirurgia : ""
+        }`
+      : "";
+    const procedimentoLabel =
+      form.nomeProcedimento ||
+      ESPECIALIDADES.find((e) => e.value === form.tipoIncisao)?.label ||
+      "";
+
+    const corpo =
+      "Gostaria de solicitar a guia do procedimento cirúrgico do paciente a seguir:\n" +
+      `Nome: ${form.nomePaciente || ""}\n` +
+      `Convênio: ${form.convenio || ""}\n` +
+      `Data e Horário: ${dataHora}\n` +
+      `Procedimento: ${procedimentoLabel}\n` +
+      `Registro: ${form.registroPaciente || ""}`;
+
+    const assunto = `Solicitação de guia de honorários - ${form.nomePaciente || "paciente"}`;
+    const destinatario = EMAIL_GUIA_POR_HOSPITAL[form.hospital] || "";
+
+    const mailto = `mailto:${destinatario}?subject=${encodeURIComponent(
+      assunto
+    )}&body=${encodeURIComponent(corpo)}`;
+    window.location.href = mailto;
+  };
+
+  return (
+    <div className="app">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+        :root {
+          --bg: #F2F5F6;
+          --surface: #FFFFFF;
+          --ink: #16232E;
+          --muted: #5B6B76;
+          --border: #DCE3E7;
+          --accent: #2E6F95;
+          --accent-soft: #E4EDF2;
+          --low: #1F9D6B;
+          --low-soft: #E4F5EC;
+          --mid: #D98B2B;
+          --mid-soft: #FBEBD6;
+          --high: #C0392B;
+          --high-soft: #FBE3E0;
+        }
+
+        * { box-sizing: border-box; }
+
+        .app {
+          font-family: 'IBM Plex Sans', sans-serif;
+          color: var(--ink);
+          background: var(--bg);
+          min-height: 100%;
+          max-width: 480px;
+          margin: 0 auto;
+          padding: 18px 16px 90px;
+        }
+
+        .top-eyebrow {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 11px;
+          letter-spacing: 0.14em;
+          color: var(--muted);
+          text-transform: uppercase;
+          margin: 0 0 6px;
+        }
+
+        .top-title {
+          font-size: 19px;
+          font-weight: 600;
+          margin: 0 0 14px;
+        }
+
+        .progress-wrap {
+          margin-bottom: 18px;
+        }
+
+        .progress-track {
+          height: 4px;
+          background: var(--border);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+
+        .progress-fill {
+          height: 100%;
+          background: var(--accent);
+          transition: width 0.2s ease;
+        }
+
+        .progress-label {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 11px;
+          color: var(--muted);
+          margin-top: 6px;
+        }
+
+        .disclaimer {
+          font-size: 12px;
+          color: var(--muted);
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 10px 12px;
+          margin-bottom: 16px;
+        }
+
+        .section-card {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          padding: 18px 16px;
+          margin-bottom: 14px;
+        }
+
+        .section-card h3 {
+          font-size: 13px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: var(--muted);
+          margin: 0 0 14px;
+        }
+
+        .field { margin-bottom: 16px; }
+        .field:last-child { margin-bottom: 0; }
+
+        .field label {
+          display: block;
+          font-size: 14px;
+          font-weight: 500;
+          margin-bottom: 4px;
+        }
+
+        .hint {
+          font-size: 12px;
+          color: var(--muted);
+          margin-bottom: 6px;
+        }
+
+        .field input, .field select {
+          width: 100%;
+          font-family: 'IBM Plex Sans', sans-serif;
+          font-size: 15px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid var(--border);
+          background: var(--bg);
+          color: var(--ink);
+        }
+
+        .field textarea {
+          width: 100%;
+          font-family: 'IBM Plex Sans', sans-serif;
+          font-size: 15px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid var(--border);
+          background: var(--bg);
+          color: var(--ink);
+          resize: vertical;
+        }
+
+        .field textarea:focus {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
+
+        .field input:focus, .field select:focus {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
+
+        .input-suffix-wrap { position: relative; }
+        .suffix {
+          position: absolute;
+          right: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          font-size: 13px;
+          color: var(--muted);
+          pointer-events: none;
+        }
+
+        .toggle-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .toggle-row label { margin-bottom: 0; }
+
+        .toggle-btns {
+          display: flex;
+          gap: 6px;
+          flex-shrink: 0;
+        }
+
+        .toggle-btn {
+          font-family: 'IBM Plex Sans', sans-serif;
+          font-size: 13px;
+          font-weight: 500;
+          padding: 7px 14px;
+          border-radius: 999px;
+          border: 1px solid var(--border);
+          background: var(--bg);
+          color: var(--muted);
+          cursor: pointer;
+        }
+
+        .toggle-btn.active {
+          background: var(--ink);
+          border-color: var(--ink);
+          color: var(--bg);
+        }
+
+        .nav-row {
+          display: flex;
+          gap: 10px;
+          margin-top: 4px;
+        }
+
+        .btn-secondary, .btn-primary {
+          flex: 1;
+          padding: 13px;
+          border-radius: 10px;
+          font-size: 14px;
+          font-weight: 600;
+          border: none;
+          cursor: pointer;
+        }
+
+        .btn-secondary {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          color: var(--muted);
+        }
+
+        .btn-primary {
+          background: var(--accent);
+          color: #fff;
+        }
+
+        .btn-primary:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .steps-nav {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-bottom: 14px;
+        }
+
+        .step-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--border);
+        }
+
+        .step-dot.done { background: var(--accent); }
+        .step-dot.current { background: var(--ink); }
+
+        .warn-note {
+          font-size: 12px;
+          color: var(--mid);
+          background: var(--mid-soft);
+          border-radius: 10px;
+          padding: 10px 12px;
+          margin-bottom: 14px;
+        }
+
+        .score-card {
+          border-radius: 14px;
+          padding: 16px;
+          margin-bottom: 12px;
+          border: 1px solid var(--border);
+          background: var(--surface);
+        }
+
+        .score-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 8px;
+        }
+
+        .score-nome {
+          font-size: 14px;
+          font-weight: 600;
+        }
+
+        .score-pill {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 11px;
+          font-weight: 500;
+          padding: 4px 10px;
+          border-radius: 999px;
+        }
+
+        .score-pill.low { background: var(--low-soft); color: var(--low); }
+        .score-pill.mid { background: var(--mid-soft); color: var(--mid); }
+        .score-pill.high { background: var(--high-soft); color: var(--high); }
+
+        .score-valor {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 24px;
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+
+        .score-detalhe {
+          font-size: 13px;
+          color: var(--muted);
+        }
+
+        .score-base {
+          font-size: 11px;
+          color: var(--muted);
+          margin-top: 8px;
+          padding-top: 8px;
+          border-top: 1px dashed var(--border);
+        }
+
+        .airway-alert {
+          background: var(--high-soft);
+          color: var(--high);
+          border-radius: 10px;
+          padding: 12px;
+          font-size: 13px;
+          margin-bottom: 12px;
+        }
+
+        .airway-ok {
+          background: var(--low-soft);
+          color: var(--low);
+          border-radius: 10px;
+          padding: 12px;
+          font-size: 13px;
+          margin-bottom: 12px;
+        }
+
+        .result-header {
+          font-size: 12px;
+          color: var(--muted);
+          margin-bottom: 14px;
+        }
+
+        .patient-header {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 14px;
+          padding: 14px 16px;
+          margin-bottom: 14px;
+        }
+
+        .patient-name {
+          font-size: 16px;
+          font-weight: 600;
+        }
+
+        .patient-meta {
+          font-size: 13px;
+          color: var(--muted);
+          margin-top: 2px;
+        }
+
+        .btn-calendar {
+          margin-top: 10px;
+          font-family: 'IBM Plex Sans', sans-serif;
+          font-size: 13px;
+          font-weight: 600;
+          padding: 9px 14px;
+          border-radius: 10px;
+          border: 1px solid var(--accent);
+          background: var(--accent-soft);
+          color: var(--accent);
+          cursor: pointer;
+        }
+
+        .med-list {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .med-item {
+          font-size: 14px;
+          background: var(--bg);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 8px 10px;
+        }
+
+        .orient-block {
+          margin-bottom: 16px;
+        }
+
+        .orient-block:last-child { margin-bottom: 0; }
+
+        .orient-title {
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 6px;
+        }
+
+        .orient-block ul {
+          margin: 0 0 6px;
+          padding-left: 18px;
+        }
+
+        .orient-block li {
+          font-size: 13px;
+          color: var(--ink);
+          margin-bottom: 4px;
+        }
+      `}</style>
+
+      <p className="top-eyebrow">Avaliação pré-anestésica</p>
+      <p className="top-title">{STEPS[step]}</p>
+
+      {step < STEPS.length - 1 && (
+        <div className="progress-wrap">
+          <div className="progress-track">
+            <div
+              className="progress-fill"
+              style={{ width: `${((step + 1) / (STEPS.length - 1)) * 100}%` }}
+            />
+          </div>
+          <div className="progress-label">
+            Etapa {step + 1} de {STEPS.length - 1}
+          </div>
+        </div>
+      )}
+
+      {step === 0 && (
+        <div className="disclaimer">
+          Ferramenta de apoio à decisão clínica. Os escores calculados são
+          estimativas baseadas em literatura consolidada e não substituem o
+          julgamento clínico. Os dados preenchidos não são salvos — ficam
+          apenas nesta sessão e somem ao atualizar a página ou iniciar uma
+          nova avaliação.
+        </div>
+      )}
+
+      {step === 0 && (
+        <Section title="Dados do paciente e cirurgia">
+          <TextField
+            label="Nome"
+            value={form.nomePaciente}
+            onChange={set("nomePaciente")}
+            placeholder="Nome completo"
+          />
+          <TextField
+            label="Registro"
+            value={form.registroPaciente}
+            onChange={set("registroPaciente")}
+            placeholder="Matrícula / número de registro no hospital"
+          />
+          <TextField
+            label="Nome do cirurgião"
+            value={form.nomeCirurgiao}
+            onChange={set("nomeCirurgiao")}
+            onBlur={salvarCirurgiaoNoHistorico}
+            listId="lista-cirurgioes"
+            listOptions={cirurgioesHistorico}
+            placeholder="Nome completo"
+            hint={
+              cirurgioesHistorico.length > 0
+                ? "Comece a digitar para ver nomes já usados antes"
+                : undefined
+            }
+          />
+          <SelField
+            label="Hospital"
+            value={form.hospital}
+            onChange={set("hospital")}
+            options={HOSPITAIS}
+          />
+          <DateField
+            label="Data"
+            value={form.dataCirurgia}
+            onChange={set("dataCirurgia")}
+          />
+          <TimeField
+            label="Horário"
+            value={form.horarioCirurgia}
+            onChange={set("horarioCirurgia")}
+          />
+          <SelField
+            label="Convênio"
+            value={form.convenio}
+            onChange={set("convenio")}
+            options={CONVENIOS}
+          />
+          <TextField
+            label="Nome do procedimento"
+            value={form.nomeProcedimento}
+            onChange={set("nomeProcedimento")}
+            placeholder="Ex: Colecistectomia videolaparoscópica"
+          />
+          <NumField label="Idade" value={form.idade} onChange={set("idade")} suffix="anos" />
+          <SelField
+            label="Sexo"
+            value={form.sexo}
+            onChange={set("sexo")}
+            options={[
+              { value: "masculino", label: "Masculino" },
+              { value: "feminino", label: "Feminino" },
+            ]}
+          />
+          <NumField label="Peso" value={form.peso} onChange={set("peso")} suffix="kg" />
+          <NumField label="Altura" value={form.altura} onChange={set("altura")} suffix="cm" />
+          <SelField
+            label="Especialidade cirúrgica"
+            value={form.tipoIncisao}
+            onChange={set("tipoIncisao")}
+            hint="Usada para classificar automaticamente o porte cirúrgico nos escores de risco"
+            options={ESPECIALIDADES}
+          />
+          {form.tipoIncisao === "cardiaca" && (
+            <div className="hint">
+              RCRI e ARISCAT foram validados para cirurgia não cardíaca — para
+              cirurgia cardíaca, considere ferramentas específicas (ex:
+              EuroSCORE II).
+            </div>
+          )}
+          <NumField
+            label="Duração estimada"
+            value={form.duracaoHoras}
+            onChange={set("duracaoHoras")}
+            suffix="horas"
+          />
+          <Toggle label="Caráter de urgência" value={form.urgencia} onChange={set("urgencia")} />
+        </Section>
+      )}
+
+      {step === 1 && (
+        <Section title="Comorbidades cardiovasculares">
+          <Toggle label="Doença arterial coronariana" value={form.dac} onChange={set("dac")} />
+          <Toggle label="Insuficiência cardíaca" value={form.icc} onChange={set("icc")} />
+          <Toggle label="AVC / AIT prévio" value={form.avcPrevio} onChange={set("avcPrevio")} />
+          <Toggle label="Hipertensão arterial" value={form.has} onChange={set("has")} />
+          <Toggle label="Arritmia" value={form.arritmia} onChange={set("arritmia")} />
+          <Toggle label="Valvopatia" value={form.valvopatia} onChange={set("valvopatia")} />
+          <Toggle
+            label="Diabetes em uso de insulina"
+            value={form.dmInsulina}
+            onChange={set("dmInsulina")}
+          />
+          <NumField
+            label="Capacidade funcional"
+            value={form.mets}
+            onChange={set("mets")}
+            suffix="METs"
+            hint="Se souber estimar; opcional"
+          />
+        </Section>
+      )}
+
+      {step === 2 && (
+        <Section title="Comorbidades pulmonares">
+          <Toggle label="DPOC" value={form.dpoc} onChange={set("dpoc")} />
+          <Toggle label="Asma" value={form.asma} onChange={set("asma")} />
+          <Toggle
+            label="Tabagismo atual"
+            value={form.tabagismoAtual}
+            onChange={set("tabagismoAtual")}
+          />
+          <NumField
+            label="SpO2 basal em ar ambiente"
+            value={form.spo2}
+            onChange={set("spo2")}
+            suffix="%"
+          />
+          <Toggle
+            label="Infecção respiratória no último mês"
+            value={form.infeccaoResp}
+            onChange={set("infeccaoResp")}
+          />
+          <Toggle label="Ronco alto" value={form.ronco} onChange={set("ronco")} />
+          <Toggle
+            label="Sonolência diurna excessiva"
+            value={form.sonolencia}
+            onChange={set("sonolencia")}
+          />
+          <Toggle
+            label="Apneia observada por terceiros"
+            value={form.apneiaObservada}
+            onChange={set("apneiaObservada")}
+          />
+        </Section>
+      )}
+
+      {step === 3 && (
+        <>
+          <Section title="Comorbidades renais">
+            <Toggle label="Doença renal crônica" value={form.drc} onChange={set("drc")} />
+            <Toggle label="Diálise" value={form.dialise} onChange={set("dialise")} />
+            <NumField
+              label="Creatinina sérica"
+              value={form.creatinina}
+              onChange={set("creatinina")}
+              suffix="mg/dL"
+            />
+          </Section>
+          <Section title="Comorbidades hepáticas">
+            <Toggle
+              label="Hepatopatia / cirrose"
+              value={form.hepatopatia}
+              onChange={set("hepatopatia")}
+            />
+            <Toggle
+              label="Sinais de descompensação (ascite, encefalopatia, icterícia)"
+              value={form.childPughSinais}
+              onChange={set("childPughSinais")}
+            />
+          </Section>
+        </>
+      )}
+
+      {step === 4 && (
+        <>
+          <Section title="Comorbidades endocrinológicas">
+            <SelField
+              label="Diabetes mellitus"
+              value={form.dmTipo}
+              onChange={set("dmTipo")}
+              options={[
+                { value: "nao", label: "Não possui" },
+                { value: "tipo1", label: "Tipo 1" },
+                { value: "tipo2", label: "Tipo 2" },
+              ]}
+            />
+            <SelField
+              label="Controle glicêmico"
+              value={form.controleGlicemico}
+              onChange={set("controleGlicemico")}
+              options={[
+                { value: "bom", label: "Bom" },
+                { value: "regular", label: "Regular" },
+                { value: "ruim", label: "Ruim" },
+              ]}
+            />
+            <Toggle
+              label="Tireoidopatia"
+              value={form.tireoidopatia}
+              onChange={set("tireoidopatia")}
+            />
+          </Section>
+          <Section title="Comorbidades hematológicas">
+            <NumField label="Hemoglobina" value={form.hb} onChange={set("hb")} suffix="g/dL" />
+            <Toggle
+              label="Coagulopatia conhecida"
+              value={form.coagulopatia}
+              onChange={set("coagulopatia")}
+            />
+            <Toggle
+              label="Uso de anticoagulante"
+              value={form.anticoagulante}
+              onChange={set("anticoagulante")}
+            />
+          </Section>
+        </>
+      )}
+
+      {step === 5 && (
+        <>
+          <Section title="Comorbidades neurológicas">
+            <Toggle
+              label="Doença neurológica prévia"
+              value={form.neuroDoenca}
+              onChange={set("neuroDoenca")}
+            />
+            <Toggle label="Epilepsia" value={form.epilepsia} onChange={set("epilepsia")} />
+            <Toggle
+              label="Doença neuromuscular"
+              value={form.doencaNeuromuscular}
+              onChange={set("doencaNeuromuscular")}
+            />
+          </Section>
+          <Section title="Comorbidades osteomusculares">
+            <Toggle
+              label="Mobilidade reduzida"
+              value={form.mobilidadeReduzida}
+              onChange={set("mobilidadeReduzida")}
+            />
+            <Toggle
+              label="Doença de coluna (relevante p/ bloqueio)"
+              value={form.doencaColuna}
+              onChange={set("doencaColuna")}
+            />
+          </Section>
+        </>
+      )}
+
+      {step === 6 && (
+        <Section title="Avaliação da via aérea">
+          <SelField
+            label="Mallampati"
+            value={form.mallampati}
+            onChange={set("mallampati")}
+            options={[
+              { value: "1", label: "Classe I" },
+              { value: "2", label: "Classe II" },
+              { value: "3", label: "Classe III" },
+              { value: "4", label: "Classe IV" },
+            ]}
+          />
+          <SelField
+            label="Abertura bucal"
+            value={form.aberturaBucal}
+            onChange={set("aberturaBucal")}
+            options={[
+              { value: "normal", label: "Normal (≥3cm)" },
+              { value: "reduzida", label: "Reduzida (<3cm)" },
+            ]}
+          />
+          <SelField
+            label="Mobilidade cervical"
+            value={form.mobilidadeCervical}
+            onChange={set("mobilidadeCervical")}
+            options={[
+              { value: "normal", label: "Normal" },
+              { value: "reduzida", label: "Reduzida" },
+            ]}
+          />
+          <NumField
+            label="Circunferência cervical"
+            value={form.circunferenciaCervical}
+            onChange={set("circunferenciaCervical")}
+            suffix="cm"
+          />
+          <Toggle
+            label="Uso de prótese dentária"
+            value={form.proteseDentaria}
+            onChange={set("proteseDentaria")}
+          />
+        </Section>
+      )}
+
+      {step === 7 && (
+        <>
+          <Section title="Hábitos de vida">
+            <NumField
+              label="Tabagismo (carga)"
+              value={form.tabagismoAnos}
+              onChange={set("tabagismoAnos")}
+              suffix="anos-maço"
+              hint="Deixe em branco se não fumante"
+            />
+            <Toggle label="Etilismo" value={form.etilismo} onChange={set("etilismo")} />
+            <Toggle label="Uso de outras drogas" value={form.drogas} onChange={set("drogas")} />
+          </Section>
+          <Section title="Passado cirúrgico e anestésico">
+            <Toggle
+              label="Cirurgias prévias"
+              value={form.cirurgiasPrevias}
+              onChange={set("cirurgiasPrevias")}
+            />
+            <Toggle
+              label="Intercorrência anestésica prévia"
+              value={form.intercorrenciaAnestesica}
+              onChange={set("intercorrenciaAnestesica")}
+            />
+            <Toggle
+              label="História familiar de hipertermia maligna"
+              value={form.historiaFamiliarHM}
+              onChange={set("historiaFamiliarHM")}
+            />
+          </Section>
+          <Section title="Classificação ASA (opcional)">
+            <SelField
+              label="ASA-PS"
+              value={form.asa}
+              onChange={set("asa")}
+              hint="Classificação clínica — atribuída pelo próprio avaliador"
+              options={[
+                { value: "1", label: "ASA I — saudável" },
+                { value: "2", label: "ASA II — doença sistêmica leve" },
+                { value: "3", label: "ASA III — doença sistêmica grave" },
+                { value: "4", label: "ASA IV — ameaça constante à vida" },
+                { value: "5", label: "ASA V — moribundo" },
+                { value: "6", label: "ASA VI — morte encefálica" },
+              ]}
+            />
+          </Section>
+          <Section title="Medicações de uso contínuo">
+            <TextAreaField
+              label="Medicações em uso"
+              value={form.medicacoesUso}
+              onChange={set("medicacoesUso")}
+              placeholder="Ex: Losartana 50mg 1x/dia, Metformina 850mg 2x/dia, AAS 100mg 1x/dia..."
+              hint="Uma por linha, com dose e posologia se possível"
+            />
+          </Section>
+        </>
+      )}
+
+      {step === 8 && (
+        <>
+          {(form.nomePaciente || form.hospital || form.dataCirurgia || form.convenio) && (
+            <div className="patient-header">
+              {form.nomePaciente && <div className="patient-name">{form.nomePaciente}</div>}
+              {form.nomeCirurgiao && (
+                <div className="patient-meta">Cirurgião: {form.nomeCirurgiao}</div>
+              )}
+              <div className="patient-meta">
+                {form.hospital &&
+                  HOSPITAIS.find((h) => h.value === form.hospital)?.label}
+                {form.hospital && form.convenio && " · "}
+                {form.convenio}
+                {(form.hospital || form.convenio) && form.dataCirurgia && " · "}
+                {form.dataCirurgia &&
+                  `${form.dataCirurgia.split("-").reverse().join("/")}${
+                    form.horarioCirurgia ? " às " + form.horarioCirurgia : ""
+                  }`}
+              </div>
+              {form.dataCirurgia && (
+                <button className="btn-calendar" onClick={adicionarAoCalendario}>
+                  Adicionar ao calendário
+                </button>
+              )}
+              {form.hospital && (
+                <>
+                  <button
+                    className="btn-calendar"
+                    style={{ marginLeft: 8 }}
+                    onClick={solicitarGuiaPorEmail}
+                  >
+                    Solicitar guia por e-mail
+                  </button>
+                  {!EMAIL_GUIA_POR_HOSPITAL[form.hospital] && (
+                    <div className="hint" style={{ marginTop: 8 }}>
+                      E-mail deste hospital ainda não cadastrado — o rascunho
+                      abrirá sem destinatário, é só preencher manualmente.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          <p className="result-header">
+            Estimativas baseadas nos dados informados. Revise sempre com o
+            quadro clínico completo.
+          </p>
+
+          {!podeCalcular && (
+            <div className="warn-note">
+              Idade, sexo, peso e altura são necessários para calcular todos
+              os escores. Volte e complete a etapa "Paciente e cirurgia".
+            </div>
+          )}
+
+          {bmi !== null && (
+            <ScoreCard
+              nome="IMC"
+              valor={`${bmi.toFixed(1)} kg/m²`}
+              detalhe={bmiClass}
+              nivel={bmi >= 30 || bmi < 18.5 ? (bmi >= 40 ? "alto" : "moderado") : "baixo"}
+            />
+          )}
+
+          {form.asa && (
+            <ScoreCard
+              nome="ASA-PS"
+              valor={`ASA ${form.asa}`}
+              detalhe="Classificação atribuída manualmente"
+              nivel={Number(form.asa) <= 2 ? "baixo" : Number(form.asa) === 3 ? "moderado" : "alto"}
+            />
+          )}
+
+          <ScoreCard
+            nome="RCRI — Índice de Risco Cardíaco Revisado (Lee)"
+            valor={`${rcri.pts} ponto(s) — Classe ${rcri.classe}`}
+            detalhe={`Risco estimado de evento cardíaco maior em 30 dias: ${rcri.riscoPct}`}
+            nivel={rcri.nivel}
+            base="Fatores: cirurgia de alto risco, DAC, ICC, doença cerebrovascular, DM insulino-dependente, creatinina >2,0 mg/dL"
+          />
+
+          <ScoreCard
+            nome="STOP-BANG — Risco de apneia obstrutiva do sono"
+            valor={`${stopBang.pts} de 8 pontos`}
+            detalhe={stopBang.label}
+            nivel={stopBang.nivel}
+          />
+
+          <ScoreCard
+            nome="ARISCAT — Complicações pulmonares pós-operatórias"
+            valor={`${ariscat.pts} pontos`}
+            detalhe={`Risco estimado: ${ariscat.riscoPct}`}
+            nivel={ariscat.nivel}
+          />
+
+          {viaAereaAlerta.length > 0 ? (
+            <div className="airway-alert">
+              Sinais sugestivos de via aérea potencialmente difícil:{" "}
+              {viaAereaAlerta.join(", ")}.
+            </div>
+          ) : (
+            (form.mallampati || form.aberturaBucal || form.mobilidadeCervical) && (
+              <div className="airway-ok">
+                Sem sinais de alerta relevantes na avaliação da via aérea
+                informada.
+              </div>
+            )
+          )}
+
+          {(form.medicacoesUso || "").trim() && (
+            <div className="section-card">
+              <h3>Medicações de uso contínuo informadas</h3>
+              <div className="med-list">
+                {form.medicacoesUso.split("\n").filter((l) => l.trim()).map((l, i) => (
+                  <div key={i} className="med-item">{l.trim()}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="section-card">
+            <h3>Orientações pré-operatórias</h3>
+
+            <div className="orient-block">
+              <div className="orient-title">Jejum pré-operatório</div>
+              <ul>
+                <li>Líquidos claros (água, chá claro, sucos sem polpa): até 2h antes</li>
+                <li>Leite materno: até 4h antes</li>
+                <li>Refeição leve / leite não humano / fórmula infantil: até 6h antes</li>
+                <li>Refeição gordurosa ou carne: até 8h antes</li>
+              </ul>
+              <div className="hint">Ajustar conforme protocolo institucional e condição clínica (ex: diabetes, gestação, obesidade, refluxo).</div>
+            </div>
+
+            {form.tabagismoAtual && (
+              <div className="orient-block">
+                <div className="orient-title">Cessação do tabagismo</div>
+                <ul>
+                  <li>Orientar cessação o quanto antes — idealmente 4 a 8 semanas antes da cirurgia, quando o tempo permitir</li>
+                  <li>Mesmo a cessação de 12 a 24h antes reduz carboxihemoglobina e já traz algum benefício</li>
+                </ul>
+              </div>
+            )}
+
+            {form.etilismo && (
+              <div className="orient-block">
+                <div className="orient-title">Cessação/redução do etilismo</div>
+                <ul>
+                  <li>Orientar suspensão do álcool antes da cirurgia</li>
+                  <li>Atenção ao risco de síndrome de abstinência alcoólica no perioperatório em uso pesado/crônico — considerar avaliação e profilaxia conforme o caso</li>
+                </ul>
+              </div>
+            )}
+
+            <div className="orient-block">
+              <div className="orient-title">Higiene oral e corpórea</div>
+              <ul>
+                <li>Banho antes da cirurgia (com clorexidina degermante, se protocolo do serviço)</li>
+                <li>Escovação dentária; remoção de prótese dentária removível no dia do procedimento</li>
+                <li>Remover esmalte, maquiagem, joias e adornos</li>
+              </ul>
+            </div>
+
+            <div className="orient-block">
+              <div className="orient-title">Medicações de uso contínuo</div>
+              {(form.medicacoesUso || "").trim() ? (
+                <div className="hint" style={{ marginBottom: 8 }}>
+                  Revisar individualmente cada medicação listada. Pontos de atenção comuns:
+                </div>
+              ) : (
+                <div className="hint" style={{ marginBottom: 8 }}>
+                  Nenhuma medicação foi informada. Se houver, preencha o campo na etapa anterior para revisão individualizada.
+                </div>
+              )}
+              <ul>
+                <li>Anti-hipertensivos: geralmente mantidos; avaliar suspensão de IECA/BRA no dia da cirurgia conforme protocolo e risco de hipotensão</li>
+                <li>Hipoglicemiantes orais: geralmente suspensos no dia; atenção especial à metformina conforme função renal</li>
+                <li>Anticoagulantes/antiagregantes: exigem plano individualizado de suspensão/ponte conforme o risco trombótico e o tipo de cirurgia</li>
+                <li>Medicações de uso crônico do SNC (ex: antiepilépticos, antidepressivos): geralmente mantidas até o dia da cirurgia</li>
+              </ul>
+              <div className="hint">Estas são orientações gerais — a decisão final é sempre individualizada.</div>
+            </div>
+          </div>
+
+          <div className="nav-row">
+            <button className="btn-secondary" onClick={reset}>
+              Nova avaliação
+            </button>
+          </div>
+        </>
+      )}
+
+      {step < STEPS.length - 1 && (
+        <div className="nav-row">
+          {step > 0 && (
+            <button className="btn-secondary" onClick={back}>
+              Voltar
+            </button>
+          )}
+          <button className="btn-primary" onClick={next}>
+            {step === STEPS.length - 2 ? "Ver escores" : "Avançar"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
