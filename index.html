@@ -133,7 +133,6 @@ const STEPS = [
   "Renal e hepático",
   "Endócrino e hematológico",
   "Neurológico e osteomuscular",
-  "Via aérea",
   "Hábitos e passado cirúrgico",
   "Resultado",
 ];
@@ -152,7 +151,6 @@ const initialForm = {
   peso: "",
   altura: "",
   tipoIncisao: "",
-  duracaoHoras: "",
   urgencia: false,
   gestante: false,
 
@@ -163,7 +161,6 @@ const initialForm = {
   arritmia: false,
   valvopatia: false,
   dmInsulina: false,
-  mets: "",
   iamRecente: false,
   nyha: "",
   marcapassoCdi: false,
@@ -207,16 +204,6 @@ const initialForm = {
   mobilidadeReduzida: false,
   doencaColuna: false,
 
-  viaAereaDificilPrevia: false,
-  mallampati: "",
-  aberturaBucal: "",
-  mobilidadeCervical: "",
-  distanciaTireomentoniana: "",
-  circunferenciaCervical: "",
-  barba: false,
-  massaCervicalRadioterapia: false,
-  proteseDentaria: false,
-
   alergiaMedicamentosa: false,
   quaisAlergiasMedicamentosas: "",
   alergiaLatex: false,
@@ -231,8 +218,6 @@ const initialForm = {
   opioidePosOp: false,
   historiaFamiliarHM: false,
   medicacoesUso: "",
-
-  asa: "",
 };
 
 function Toggle({ label, value, onChange, hint }) {
@@ -432,8 +417,6 @@ function App() {
   const spo2 = num(form.spo2);
   const creatinina = num(form.creatinina);
   const hb = num(form.hb);
-  const duracao = num(form.duracaoHoras);
-  const circCervical = num(form.circunferenciaCervical);
 
   const bmi = useMemo(() => {
     if (!peso || !altura) return null;
@@ -494,7 +477,6 @@ function App() {
     if (form.has) pts++;
     if (bmi !== null && bmi > 35) pts++;
     if (idade !== null && idade > 50) pts++;
-    if (circCervical !== null && circCervical > 40) pts++;
     if (form.sexo === "masculino") pts++;
 
     let nivel, label;
@@ -509,7 +491,7 @@ function App() {
       label = "alto risco de AOS";
     }
     return { pts, nivel, label };
-  }, [form.ronco, form.sonolencia, form.apneiaObservada, form.has, bmi, idade, circCervical, form.sexo]);
+  }, [form.ronco, form.sonolencia, form.apneiaObservada, form.has, bmi, idade, form.sexo]);
 
   const ariscat = useMemo(() => {
     let pts = 0;
@@ -525,10 +507,6 @@ function App() {
     if (hb !== null && hb <= 10) pts += 11;
     if (categoriaRisco === "intratoracica") pts += 24;
     else if (categoriaRisco === "intraperitoneal") pts += 15;
-    if (duracao !== null) {
-      if (duracao > 3) pts += 23;
-      else if (duracao >= 2) pts += 16;
-    }
     if (form.urgencia) pts += 8;
 
     let nivel, riscoPct;
@@ -543,29 +521,7 @@ function App() {
       riscoPct = "≈42%";
     }
     return { pts, nivel, riscoPct };
-  }, [idade, spo2, form.infeccaoResp, hb, categoriaRisco, duracao, form.urgencia]);
-
-  const viaAereaAlerta = useMemo(() => {
-    const sinais = [];
-    if (form.viaAereaDificilPrevia) sinais.push("via aérea difícil documentada previamente");
-    if (form.mallampati === "3" || form.mallampati === "4") sinais.push("Mallampati III/IV");
-    if (form.aberturaBucal === "reduzida") sinais.push("abertura bucal reduzida");
-    if (form.mobilidadeCervical === "reduzida") sinais.push("mobilidade cervical reduzida");
-    if (form.distanciaTireomentoniana === "reduzida") sinais.push("distância tireomentoniana reduzida");
-    if (circCervical !== null && circCervical > 40) sinais.push("circunferência cervical aumentada");
-    if (form.barba) sinais.push("presença de barba (risco de vedação de máscara)");
-    if (form.massaCervicalRadioterapia) sinais.push("massa cervical ou radioterapia prévia em pescoço");
-    return sinais;
-  }, [
-    form.viaAereaDificilPrevia,
-    form.mallampati,
-    form.aberturaBucal,
-    form.mobilidadeCervical,
-    form.distanciaTireomentoniana,
-    circCervical,
-    form.barba,
-    form.massaCervicalRadioterapia,
-  ]);
+  }, [idade, spo2, form.infeccaoResp, hb, categoriaRisco, form.urgencia]);
 
   const apfel = useMemo(() => {
     let pts = 0;
@@ -1323,12 +1279,6 @@ function App() {
               EuroSCORE II).
             </div>
           )}
-          <NumField
-            label="Duração estimada"
-            value={form.duracaoHoras}
-            onChange={set("duracaoHoras")}
-            suffix="horas"
-          />
           <Toggle label="Caráter de urgência" value={form.urgencia} onChange={set("urgencia")} />
         </Section>
       )}
@@ -1336,27 +1286,36 @@ function App() {
       {step === 1 && (
         <Section title="Comorbidades cardiovasculares">
           <Toggle
-            label="Infarto do miocárdio nos últimos 60 dias"
+            label="Já teve infarto nos últimos 60 dias?"
             value={form.iamRecente}
             onChange={set("iamRecente")}
           />
-          <Toggle label="Doença arterial coronariana" value={form.dac} onChange={set("dac")} />
-          <Toggle label="Insuficiência cardíaca" value={form.icc} onChange={set("icc")} />
-          <Toggle label="AVC / AIT prévio" value={form.avcPrevio} onChange={set("avcPrevio")} />
-          <Toggle label="Hipertensão arterial" value={form.has} onChange={set("has")} />
-          <Toggle label="Arritmia" value={form.arritmia} onChange={set("arritmia")} />
-          <Toggle label="Valvopatia" value={form.valvopatia} onChange={set("valvopatia")} />
+          <Toggle
+            label="Doença arterial coronariana (entupimento das artérias do coração, já teve infarto ou colocou stent)"
+            value={form.dac}
+            onChange={set("dac")}
+          />
+          <Toggle label="Insuficiência cardíaca (coração fraco)" value={form.icc} onChange={set("icc")} />
+          <Toggle
+            label="AVC / derrame ou isquemia cerebral transitória prévios"
+            value={form.avcPrevio}
+            onChange={set("avcPrevio")}
+          />
+          <Toggle label="Hipertensão arterial (pressão alta)" value={form.has} onChange={set("has")} />
+          <Toggle
+            label="Arritmia (batimento cardíaco irregular)"
+            value={form.arritmia}
+            onChange={set("arritmia")}
+          />
+          <Toggle
+            label="Problema em válvula do coração (valvopatia)"
+            value={form.valvopatia}
+            onChange={set("valvopatia")}
+          />
           <Toggle
             label="Diabetes em uso de insulina"
             value={form.dmInsulina}
             onChange={set("dmInsulina")}
-          />
-          <NumField
-            label="Capacidade funcional"
-            value={form.mets}
-            onChange={set("mets")}
-            suffix="METs"
-            hint="Se souber estimar; opcional"
           />
           <SelField
             label="Classe funcional (NYHA)"
@@ -1389,10 +1348,14 @@ function App() {
 
       {step === 2 && (
         <Section title="Comorbidades pulmonares">
-          <Toggle label="DPOC" value={form.dpoc} onChange={set("dpoc")} />
+          <Toggle
+            label="DPOC (enfisema ou bronquite crônica)"
+            value={form.dpoc}
+            onChange={set("dpoc")}
+          />
           <Toggle label="Asma" value={form.asma} onChange={set("asma")} />
           <Toggle
-            label="Exacerbação ou internação recente por asma/DPOC (últimos 12 meses)"
+            label="Piora recente ou internação por asma/bronquite/enfisema (últimos 12 meses)"
             value={form.exacerbacaoRecente}
             onChange={set("exacerbacaoRecente")}
           />
@@ -1434,23 +1397,28 @@ function App() {
       {step === 3 && (
         <>
           <Section title="Comorbidades renais">
-            <Toggle label="Doença renal crônica" value={form.drc} onChange={set("drc")} />
-            <Toggle label="Diálise" value={form.dialise} onChange={set("dialise")} />
+            <Toggle
+              label="Doença renal crônica (problema nos rins de longo prazo)"
+              value={form.drc}
+              onChange={set("drc")}
+            />
+            <Toggle label="Faz diálise" value={form.dialise} onChange={set("dialise")} />
             <NumField
               label="Creatinina sérica"
               value={form.creatinina}
               onChange={set("creatinina")}
               suffix="mg/dL"
+              hint="Se souber, do exame de sangue mais recente; deixe em branco se não souber"
             />
           </Section>
           <Section title="Comorbidades hepáticas">
             <Toggle
-              label="Hepatopatia / cirrose"
+              label="Doença no fígado (hepatite crônica, cirrose)"
               value={form.hepatopatia}
               onChange={set("hepatopatia")}
             />
             <Toggle
-              label="Sinais de descompensação (ascite, encefalopatia, icterícia)"
+              label="Já teve barriga inchada por líquido, confusão mental ou pele/olhos amarelados por problema no fígado?"
               value={form.childPughSinais}
               onChange={set("childPughSinais")}
             />
@@ -1482,7 +1450,7 @@ function App() {
               ]}
             />
             <Toggle
-              label="Tireoidopatia"
+              label="Problema de tireoide"
               value={form.tireoidopatia}
               onChange={set("tireoidopatia")}
             />
@@ -1496,7 +1464,7 @@ function App() {
           <Section title="Comorbidades hematológicas">
             <NumField label="Hemoglobina" value={form.hb} onChange={set("hb")} suffix="g/dL" />
             <Toggle
-              label="Coagulopatia conhecida"
+              label="Alguma doença que faz você sangrar fácil ou demorar para estancar o sangramento?"
               value={form.coagulopatia}
               onChange={set("coagulopatia")}
             />
@@ -1533,13 +1501,13 @@ function App() {
         <>
           <Section title="Comorbidades neurológicas">
             <Toggle
-              label="Doença neurológica prévia"
+              label="Outra doença neurológica (do cérebro ou nervos)"
               value={form.neuroDoenca}
               onChange={set("neuroDoenca")}
             />
-            <Toggle label="Epilepsia" value={form.epilepsia} onChange={set("epilepsia")} />
+            <Toggle label="Epilepsia (convulsões)" value={form.epilepsia} onChange={set("epilepsia")} />
             <Toggle
-              label="Doença neuromuscular"
+              label="Doença que afeta os músculos e nervos (doença neuromuscular)"
               value={form.doencaNeuromuscular}
               onChange={set("doencaNeuromuscular")}
             />
@@ -1575,71 +1543,6 @@ function App() {
       )}
 
       {step === 6 && (
-        <Section title="Avaliação da via aérea">
-          <Toggle
-            label="Via aérea difícil documentada em anestesia anterior"
-            value={form.viaAereaDificilPrevia}
-            onChange={set("viaAereaDificilPrevia")}
-          />
-          <SelField
-            label="Mallampati"
-            value={form.mallampati}
-            onChange={set("mallampati")}
-            options={[
-              { value: "1", label: "Classe I" },
-              { value: "2", label: "Classe II" },
-              { value: "3", label: "Classe III" },
-              { value: "4", label: "Classe IV" },
-            ]}
-          />
-          <SelField
-            label="Abertura bucal"
-            value={form.aberturaBucal}
-            onChange={set("aberturaBucal")}
-            options={[
-              { value: "normal", label: "Normal (≥3cm)" },
-              { value: "reduzida", label: "Reduzida (<3cm)" },
-            ]}
-          />
-          <SelField
-            label="Mobilidade cervical"
-            value={form.mobilidadeCervical}
-            onChange={set("mobilidadeCervical")}
-            options={[
-              { value: "normal", label: "Normal" },
-              { value: "reduzida", label: "Reduzida" },
-            ]}
-          />
-          <SelField
-            label="Distância tireomentoniana"
-            value={form.distanciaTireomentoniana}
-            onChange={set("distanciaTireomentoniana")}
-            options={[
-              { value: "normal", label: "Normal (≥6cm)" },
-              { value: "reduzida", label: "Reduzida (<6cm)" },
-            ]}
-          />
-          <NumField
-            label="Circunferência cervical"
-            value={form.circunferenciaCervical}
-            onChange={set("circunferenciaCervical")}
-            suffix="cm"
-          />
-          <Toggle label="Presença de barba" value={form.barba} onChange={set("barba")} />
-          <Toggle
-            label="Massa cervical ou radioterapia prévia em pescoço"
-            value={form.massaCervicalRadioterapia}
-            onChange={set("massaCervicalRadioterapia")}
-          />
-          <Toggle
-            label="Uso de prótese dentária"
-            value={form.proteseDentaria}
-            onChange={set("proteseDentaria")}
-          />
-        </Section>
-      )}
-
-      {step === 7 && (
         <>
           <Section title="Alergias">
             <Toggle
@@ -1684,12 +1587,12 @@ function App() {
               onChange={set("cirurgiasPrevias")}
             />
             <Toggle
-              label="Intercorrência anestésica prévia"
+              label="Já teve algum problema ou complicação numa anestesia anterior?"
               value={form.intercorrenciaAnestesica}
               onChange={set("intercorrenciaAnestesica")}
             />
             <Toggle
-              label="Histórico de náusea/vômito pós-operatório ou cinetose (enjoo de movimento)"
+              label="Já teve náusea/vômito depois de uma cirurgia, ou enjoo fácil em viagens (carro, barco, avião)?"
               value={form.historicoNveoCinetose}
               onChange={set("historicoNveoCinetose")}
             />
@@ -1697,27 +1600,12 @@ function App() {
               label="Uso previsto de opioides no pós-operatório"
               value={form.opioidePosOp}
               onChange={set("opioidePosOp")}
+              hint="Se não souber, pode deixar em branco — o anestesiologista avalia na consulta"
             />
             <Toggle
-              label="História familiar de hipertermia maligna"
+              label="Algum parente de sangue já teve febre muito alta ou reação grave durante uma anestesia (hipertermia maligna)?"
               value={form.historiaFamiliarHM}
               onChange={set("historiaFamiliarHM")}
-            />
-          </Section>
-          <Section title="Classificação ASA (opcional)">
-            <SelField
-              label="ASA-PS"
-              value={form.asa}
-              onChange={set("asa")}
-              hint="Classificação clínica — atribuída pelo próprio avaliador"
-              options={[
-                { value: "1", label: "ASA I — saudável" },
-                { value: "2", label: "ASA II — doença sistêmica leve" },
-                { value: "3", label: "ASA III — doença sistêmica grave" },
-                { value: "4", label: "ASA IV — ameaça constante à vida" },
-                { value: "5", label: "ASA V — moribundo" },
-                { value: "6", label: "ASA VI — morte encefálica" },
-              ]}
             />
           </Section>
           <Section title="Medicações de uso contínuo">
@@ -1732,7 +1620,7 @@ function App() {
         </>
       )}
 
-      {step === 8 && (
+      {step === 7 && (
         <>
           {(form.nomePaciente || form.hospital || form.dataCirurgia || form.convenio) && (
             <div className="patient-header">
@@ -1797,15 +1685,6 @@ function App() {
             />
           )}
 
-          {form.asa && (
-            <ScoreCard
-              nome="ASA-PS"
-              valor={`ASA ${form.asa}`}
-              detalhe="Classificação atribuída manualmente"
-              nivel={Number(form.asa) <= 2 ? "baixo" : Number(form.asa) === 3 ? "moderado" : "alto"}
-            />
-          )}
-
           {form.nyha && (
             <ScoreCard
               nome="Classe funcional (NYHA)"
@@ -1850,20 +1729,6 @@ function App() {
             nivel={apfel.nivel}
             base="Fatores: sexo feminino, não fumante, histórico de NVPO/cinetose, uso previsto de opioides no pós-operatório"
           />
-
-          {viaAereaAlerta.length > 0 ? (
-            <div className="airway-alert">
-              Sinais sugestivos de via aérea potencialmente difícil:{" "}
-              {viaAereaAlerta.join(", ")}.
-            </div>
-          ) : (
-            (form.mallampati || form.aberturaBucal || form.mobilidadeCervical) && (
-              <div className="airway-ok">
-                Sem sinais de alerta relevantes na avaliação da via aérea
-                informada.
-              </div>
-            )
-          )}
 
           {alertasClinicos.length > 0 && (
             <div className="section-card">
