@@ -8,6 +8,7 @@
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <style>
   html, body { margin: 0; padding: 0; background: #F2F5F6; }
   #root { min-height: 100vh; }
@@ -375,10 +376,212 @@ function ScoreCard({ nome, valor, detalhe, nivel, base }) {
   );
 }
 
+function formatSimNao(v) {
+  return v === true ? "Sim" : v === false ? "Não" : "Não informado";
+}
+
+function formatValor(v, suffix) {
+  if (v === "" || v === null || v === undefined) return "Não informado";
+  return suffix ? `${v} ${suffix}` : String(v);
+}
+
+function formatData(dataISO) {
+  return dataISO ? dataISO.split("-").reverse().join("/") : "Não informado";
+}
+
+// Monta o relatório em PDF com todas as respostas do questionário e os
+// escores calculados, para envio ao médico responsável.
+function gerarRelatorioPDF({ form, bmi, bmiClass, rcri, stopBang, ariscat, apfel, alertasClinicos }) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const marginX = 40;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let y = 50;
+
+  const ensureSpace = (needed) => {
+    if (y + needed > pageHeight - 40) {
+      doc.addPage();
+      y = 50;
+    }
+  };
+
+  const addTitle = (text) => {
+    y += 6;
+    ensureSpace(24);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text(text, marginX, y);
+    y += 16;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+  };
+
+  const addLine = (text) => {
+    const lines = doc.splitTextToSize(text, pageWidth - marginX * 2);
+    lines.forEach((line) => {
+      ensureSpace(14);
+      doc.text(line, marginX, y);
+      y += 14;
+    });
+  };
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Relatório de Avaliação Pré-Anestésica", marginX, y);
+  y += 22;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")}`, marginX, y);
+  y += 18;
+
+  const hospitalLabel = HOSPITAIS.find((h) => h.value === form.hospital)?.label || "Não informado";
+  const especialidadeLabel =
+    ESPECIALIDADES.find((e) => e.value === form.tipoIncisao)?.label || "Não informado";
+
+  addTitle("Dados do paciente e cirurgia");
+  addLine(`Nome: ${formatValor(form.nomePaciente)}`);
+  addLine(`Registro: ${formatValor(form.registroPaciente)}`);
+  addLine(`Cirurgião: ${formatValor(form.nomeCirurgiao)}`);
+  addLine(`Hospital: ${hospitalLabel}`);
+  addLine(`Convênio: ${formatValor(form.convenio)}`);
+  addLine(`Data/Horário: ${formatData(form.dataCirurgia)}${form.horarioCirurgia ? " às " + form.horarioCirurgia : ""}`);
+  addLine(`Procedimento: ${formatValor(form.nomeProcedimento)}`);
+  addLine(`Especialidade: ${especialidadeLabel}`);
+  addLine(`Idade: ${formatValor(form.idade, "anos")}`);
+  addLine(
+    `Sexo: ${form.sexo === "masculino" ? "Masculino" : form.sexo === "feminino" ? "Feminino" : "Não informado"}`
+  );
+  if (form.gestante) addLine("Gestante: Sim");
+  addLine(`Peso: ${formatValor(form.peso, "kg")}`);
+  addLine(`Altura: ${formatValor(form.altura, "cm")}`);
+  addLine(`Caráter de urgência: ${formatSimNao(form.urgencia)}`);
+
+  addTitle("Cardiovascular");
+  addLine(`Infarto do miocárdio nos últimos 60 dias: ${formatSimNao(form.iamRecente)}`);
+  addLine(`Doença arterial coronariana: ${formatSimNao(form.dac)}`);
+  addLine(`Insuficiência cardíaca: ${formatSimNao(form.icc)}`);
+  addLine(`AVC/AIT prévio: ${formatSimNao(form.avcPrevio)}`);
+  addLine(`Hipertensão arterial: ${formatSimNao(form.has)}`);
+  addLine(`Arritmia: ${formatSimNao(form.arritmia)}`);
+  addLine(`Valvopatia: ${formatSimNao(form.valvopatia)}`);
+  addLine(`Diabetes em uso de insulina: ${formatSimNao(form.dmInsulina)}`);
+  addLine(`Classe funcional (NYHA): ${form.nyha ? "Classe " + form.nyha : "Não informado"}`);
+  addLine(`Marcapasso/CDI: ${formatSimNao(form.marcapassoCdi)}`);
+  addLine(`Stent coronariano nos últimos 12 meses: ${formatSimNao(form.stentCoronarianoRecente)}`);
+  addLine(`Dupla antiagregação plaquetária (DAPT): ${formatSimNao(form.duplaAntiagregacao)}`);
+
+  addTitle("Pulmonar");
+  addLine(`DPOC: ${formatSimNao(form.dpoc)}`);
+  addLine(`Asma: ${formatSimNao(form.asma)}`);
+  addLine(`Exacerbação/internação respiratória recente: ${formatSimNao(form.exacerbacaoRecente)}`);
+  addLine(`Tabagismo atual: ${formatSimNao(form.tabagismoAtual)}`);
+  addLine(`SpO2 basal em ar ambiente: ${formatValor(form.spo2, "%")}`);
+  addLine(`Infecção respiratória no último mês: ${formatSimNao(form.infeccaoResp)}`);
+  addLine(`Ronco alto: ${formatSimNao(form.ronco)}`);
+  addLine(`Sonolência diurna excessiva: ${formatSimNao(form.sonolencia)}`);
+  addLine(`Apneia observada por terceiros: ${formatSimNao(form.apneiaObservada)}`);
+  addLine(`Uso domiciliar de CPAP/BiPAP: ${formatSimNao(form.usoCpapBipap)}`);
+
+  addTitle("Renal e hepático");
+  addLine(`Doença renal crônica: ${formatSimNao(form.drc)}`);
+  addLine(`Diálise: ${formatSimNao(form.dialise)}`);
+  addLine(`Creatinina sérica: ${formatValor(form.creatinina, "mg/dL")}`);
+  addLine(`Doença hepática (hepatite crônica/cirrose): ${formatSimNao(form.hepatopatia)}`);
+  addLine(`Sinais de descompensação hepática: ${formatSimNao(form.childPughSinais)}`);
+
+  addTitle("Endócrino e hematológico");
+  addLine(
+    `Diabetes mellitus: ${
+      form.dmTipo === "tipo1"
+        ? "Tipo 1"
+        : form.dmTipo === "tipo2"
+        ? "Tipo 2"
+        : form.dmTipo === "nao"
+        ? "Não possui"
+        : "Não informado"
+    }`
+  );
+  addLine(`Controle glicêmico: ${formatValor(form.controleGlicemico)}`);
+  addLine(`Problema de tireoide: ${formatSimNao(form.tireoidopatia)}`);
+  addLine(`Uso de agonista de GLP-1: ${formatSimNao(form.usoGlp1)}`);
+  addLine(`Hemoglobina: ${formatValor(form.hb, "g/dL")}`);
+  addLine(`Coagulopatia conhecida: ${formatSimNao(form.coagulopatia)}`);
+  addLine(`Doença falciforme/hemoglobinopatia: ${formatSimNao(form.doencaFalciforme)}`);
+  addLine(`Uso de anticoagulante: ${formatSimNao(form.anticoagulante)}`);
+  if (form.anticoagulante) {
+    addLine(
+      `Última dose do anticoagulante: ${formatData(form.dataUltimaDoseAnticoagulante)}${
+        form.horarioUltimaDoseAnticoagulante ? " às " + form.horarioUltimaDoseAnticoagulante : ""
+      }`
+    );
+  }
+
+  addTitle("Neurológico e osteomuscular");
+  addLine(`Doença neurológica prévia: ${formatSimNao(form.neuroDoenca)}`);
+  addLine(`Epilepsia: ${formatSimNao(form.epilepsia)}`);
+  addLine(`Doença neuromuscular: ${formatSimNao(form.doencaNeuromuscular)}`);
+  addLine(`Doença de Parkinson: ${formatSimNao(form.parkinson)}`);
+  addLine(`Miastenia gravis: ${formatSimNao(form.miasteniaGravis)}`);
+  addLine(`Declínio cognitivo/demência: ${formatSimNao(form.declinioCognitivo)}`);
+  addLine(`Mobilidade reduzida: ${formatSimNao(form.mobilidadeReduzida)}`);
+  addLine(`Doença de coluna: ${formatSimNao(form.doencaColuna)}`);
+
+  addTitle("Alergias");
+  addLine(
+    `Alergia medicamentosa: ${formatSimNao(form.alergiaMedicamentosa)}${
+      form.alergiaMedicamentosa && form.quaisAlergiasMedicamentosas
+        ? " (" + form.quaisAlergiasMedicamentosas + ")"
+        : ""
+    }`
+  );
+  addLine(`Alergia a látex: ${formatSimNao(form.alergiaLatex)}`);
+  addLine(`Alergia a contraste iodado: ${formatSimNao(form.alergiaContraste)}`);
+
+  addTitle("Hábitos e passado cirúrgico/anestésico");
+  addLine(`Tabagismo (carga): ${formatValor(form.tabagismoAnos, "anos-maço")}`);
+  addLine(`Etilismo: ${formatSimNao(form.etilismo)}`);
+  addLine(`Uso de outras drogas: ${formatSimNao(form.drogas)}`);
+  addLine(`Cirurgias prévias: ${formatSimNao(form.cirurgiasPrevias)}`);
+  addLine(`Intercorrência anestésica prévia: ${formatSimNao(form.intercorrenciaAnestesica)}`);
+  addLine(`Histórico de NVPO/cinetose: ${formatSimNao(form.historicoNveoCinetose)}`);
+  addLine(`Uso previsto de opioides no pós-operatório: ${formatSimNao(form.opioidePosOp)}`);
+  addLine(`História familiar de hipertermia maligna: ${formatSimNao(form.historiaFamiliarHM)}`);
+
+  if ((form.medicacoesUso || "").trim()) {
+    addTitle("Medicações de uso contínuo");
+    form.medicacoesUso
+      .split("\n")
+      .filter((l) => l.trim())
+      .forEach((l) => addLine("• " + l.trim()));
+  }
+
+  addTitle("Índices e escores de risco");
+  if (bmi !== null) addLine(`IMC: ${bmi.toFixed(1)} kg/m² (${bmiClass})`);
+  addLine(
+    `RCRI (Lee) — Índice de Risco Cardíaco Revisado: ${rcri.pts} ponto(s), Classe ${rcri.classe}, risco estimado ${rcri.riscoPct}`
+  );
+  addLine(`STOP-BANG — Risco de apneia obstrutiva do sono: ${stopBang.pts} de 8 pontos (${stopBang.label})`);
+  addLine(
+    `ARISCAT — Complicações pulmonares pós-operatórias: ${ariscat.pts} pontos, risco estimado ${ariscat.riscoPct}`
+  );
+  addLine(
+    `Apfel — Risco de náusea/vômito pós-operatório: ${apfel.pts} de 4 pontos, risco estimado ${apfel.riscoPct}`
+  );
+
+  if (alertasClinicos.length > 0) {
+    addTitle("Alertas clínicos");
+    alertasClinicos.forEach((a) => addLine(`[${a.nivel.toUpperCase()}] ${a.titulo}: ${a.mensagem}`));
+  }
+
+  return doc;
+}
+
 function App() {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(initialForm);
   const [cirurgioesHistorico, setCirurgioesHistorico] = useState([]);
+  const [respostasEnviadas, setRespostasEnviadas] = useState(false);
 
   const CIRURGIOES_KEY = "cirurgioes-historico";
 
@@ -455,15 +658,15 @@ function App() {
       nivel = "baixo";
     } else if (pts === 1) {
       classe = "II";
-      riscoPct = "≈0,9%";
+      riscoPct = "~0,9%";
       nivel = "baixo";
     } else if (pts === 2) {
       classe = "III";
-      riscoPct = "≈6,6%";
+      riscoPct = "~6,6%";
       nivel = "moderado";
     } else {
       classe = "IV";
-      riscoPct = "≥11%";
+      riscoPct = ">=11%";
       nivel = "alto";
     }
     return { pts, classe, riscoPct, nivel };
@@ -512,13 +715,13 @@ function App() {
     let nivel, riscoPct;
     if (pts < 26) {
       nivel = "baixo";
-      riscoPct = "≈1,6%";
+      riscoPct = "~1,6%";
     } else if (pts < 45) {
       nivel = "moderado";
-      riscoPct = "≈13,3%";
+      riscoPct = "~13,3%";
     } else {
       nivel = "alto";
-      riscoPct = "≈42%";
+      riscoPct = "~42%";
     }
     return { pts, nivel, riscoPct };
   }, [idade, spo2, form.infeccaoResp, hb, categoriaRisco, form.urgencia]);
@@ -530,7 +733,7 @@ function App() {
     if (form.historicoNveoCinetose) pts++;
     if (form.opioidePosOp) pts++;
 
-    const riscoPorPontos = { 0: "≈10%", 1: "≈21%", 2: "≈39%", 3: "≈61%", 4: "≈79%" };
+    const riscoPorPontos = { 0: "~10%", 1: "~21%", 2: "~39%", 3: "~61%", 4: "~79%" };
     let nivel;
     if (pts <= 1) nivel = "baixo";
     else if (pts === 2) nivel = "moderado";
@@ -669,13 +872,12 @@ function App() {
     form.horarioUltimaDoseAnticoagulante,
   ]);
 
-  const podeCalcular = idade !== null && form.sexo && peso !== null && altura !== null;
-
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
   const reset = () => {
     setForm(initialForm);
     setStep(0);
+    setRespostasEnviadas(false);
   };
 
   const pad2 = (n) => String(n).padStart(2, "0");
@@ -760,6 +962,32 @@ function App() {
       destinatario
     )}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
     window.open(gmailCompose, "_blank", "noopener");
+  };
+
+  const enviarRespostas = () => {
+    const doc = gerarRelatorioPDF({ form, bmi, bmiClass, rcri, stopBang, ariscat, apfel, alertasClinicos });
+    const nomeArquivoBase = (form.nomePaciente || "paciente")
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/\s+/g, "_");
+    doc.save(`avaliacao_pre_anestesica_${nomeArquivoBase}.pdf`);
+
+    const hospitalLabel = HOSPITAIS.find((h) => h.value === form.hospital)?.label || "";
+    const dataFmt = formatData(form.dataCirurgia);
+    const assunto = `Avaliação pré-anestésica - ${form.nomePaciente || "paciente"} - ${
+      hospitalLabel || "hospital não informado"
+    } - ${dataFmt}`;
+    const corpo =
+      "Segue avaliação pré-anestésica preenchida pelo paciente.\n\n" +
+      "IMPORTANTE: o relatório em PDF foi baixado neste dispositivo — anexe o arquivo antes de enviar este e-mail.\n\n" +
+      `Paciente: ${form.nomePaciente || ""}\n` +
+      `Hospital: ${hospitalLabel}\n` +
+      `Data: ${dataFmt}`;
+    const gmailCompose = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
+      "camsf2740@gmail.com"
+    )}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+    window.open(gmailCompose, "_blank", "noopener");
+    setRespostasEnviadas(true);
   };
 
   return (
@@ -1664,178 +1892,29 @@ function App() {
             </div>
           )}
 
-          <p className="result-header">
-            Estimativas baseadas nos dados informados. Revise sempre com o
-            quadro clínico completo.
-          </p>
-
-          {!podeCalcular && (
-            <div className="warn-note">
-              Idade, sexo, peso e altura são necessários para calcular todos
-              os escores. Volte e complete a etapa "Paciente e cirurgia".
-            </div>
-          )}
-
-          {bmi !== null && (
-            <ScoreCard
-              nome="IMC"
-              valor={`${bmi.toFixed(1)} kg/m²`}
-              detalhe={bmiClass}
-              nivel={bmi >= 30 || bmi < 18.5 ? (bmi >= 40 ? "alto" : "moderado") : "baixo"}
-            />
-          )}
-
-          {form.nyha && (
-            <ScoreCard
-              nome="Classe funcional (NYHA)"
-              valor={`NYHA ${form.nyha}`}
-              detalhe="Classificação atribuída manualmente"
-              nivel={
-                form.nyha === "1" || form.nyha === "2"
-                  ? "baixo"
-                  : form.nyha === "3"
-                  ? "moderado"
-                  : "alto"
-              }
-            />
-          )}
-
-          <ScoreCard
-            nome="RCRI — Índice de Risco Cardíaco Revisado (Lee)"
-            valor={`${rcri.pts} ponto(s) — Classe ${rcri.classe}`}
-            detalhe={`Risco estimado de evento cardíaco maior em 30 dias: ${rcri.riscoPct}`}
-            nivel={rcri.nivel}
-            base="Fatores: cirurgia de alto risco, DAC, ICC, doença cerebrovascular, DM insulino-dependente, creatinina >2,0 mg/dL"
-          />
-
-          <ScoreCard
-            nome="STOP-BANG — Risco de apneia obstrutiva do sono"
-            valor={`${stopBang.pts} de 8 pontos`}
-            detalhe={stopBang.label}
-            nivel={stopBang.nivel}
-          />
-
-          <ScoreCard
-            nome="ARISCAT — Complicações pulmonares pós-operatórias"
-            valor={`${ariscat.pts} pontos`}
-            detalhe={`Risco estimado: ${ariscat.riscoPct}`}
-            nivel={ariscat.nivel}
-          />
-
-          <ScoreCard
-            nome="Apfel — Risco de náusea/vômito pós-operatório"
-            valor={`${apfel.pts} de 4 pontos`}
-            detalhe={`Risco estimado: ${apfel.riscoPct}`}
-            nivel={apfel.nivel}
-            base="Fatores: sexo feminino, não fumante, histórico de NVPO/cinetose, uso previsto de opioides no pós-operatório"
-          />
-
-          {alertasClinicos.length > 0 && (
-            <div className="section-card">
-              <h3>Alertas clínicos adicionais</h3>
-              {alertasClinicos.map((a, i) => (
-                <div
-                  key={i}
-                  className={
-                    a.nivel === "alto"
-                      ? "airway-alert"
-                      : a.nivel === "moderado"
-                      ? "warn-note"
-                      : "info-note"
-                  }
-                  style={{ marginBottom: i === alertasClinicos.length - 1 ? 0 : 10 }}
-                >
-                  <strong>{a.titulo}:</strong> {a.mensagem}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {(form.medicacoesUso || "").trim() && (
-            <div className="section-card">
-              <h3>Medicações de uso contínuo informadas</h3>
-              <div className="med-list">
-                {form.medicacoesUso.split("\n").filter((l) => l.trim()).map((l, i) => (
-                  <div key={i} className="med-item">{l.trim()}</div>
-                ))}
-              </div>
-            </div>
-          )}
-
           <div className="section-card">
-            <h3>Orientações pré-operatórias</h3>
-
-            <div className="orient-block">
-              <div className="orient-title">Jejum pré-operatório</div>
-              <ul>
-                <li>Líquidos claros (água, chá claro, sucos sem polpa): até 2h antes</li>
-                <li>Leite materno: até 4h antes</li>
-                <li>Refeição leve / leite não humano / fórmula infantil: até 6h antes</li>
-                <li>Refeição gordurosa ou carne: até 8h antes</li>
-              </ul>
-              <div className="hint">Ajustar conforme protocolo institucional e condição clínica (ex: diabetes, gestação, obesidade, refluxo).</div>
-            </div>
-
-            {form.usoGlp1 && (
-              <div className="orient-block">
-                <div className="orient-title">Uso de agonista de GLP-1</div>
-                <ul>
-                  <li>Risco aumentado de conteúdo gástrico residual mesmo com jejum padrão cumprido</li>
-                  <li>Considerar jejum estendido para sólidos (ex: dieta líquida nas 24h anteriores) conforme protocolo institucional</li>
-                  <li>Considerar indução em sequência rápida ou ultrassonografia gástrica à beira-leito se houver dúvida sobre esvaziamento</li>
-                </ul>
-              </div>
-            )}
-
-            {form.tabagismoAtual && (
-              <div className="orient-block">
-                <div className="orient-title">Cessação do tabagismo</div>
-                <ul>
-                  <li>Orientar cessação o quanto antes — idealmente 4 a 8 semanas antes da cirurgia, quando o tempo permitir</li>
-                  <li>Mesmo a cessação de 12 a 24h antes reduz carboxihemoglobina e já traz algum benefício</li>
-                </ul>
-              </div>
-            )}
-
-            {form.etilismo && (
-              <div className="orient-block">
-                <div className="orient-title">Cessação/redução do etilismo</div>
-                <ul>
-                  <li>Orientar suspensão do álcool antes da cirurgia</li>
-                  <li>Atenção ao risco de síndrome de abstinência alcoólica no perioperatório em uso pesado/crônico — considerar avaliação e profilaxia conforme o caso</li>
-                </ul>
-              </div>
-            )}
-
-            <div className="orient-block">
-              <div className="orient-title">Higiene oral e corpórea</div>
-              <ul>
-                <li>Banho antes da cirurgia (com clorexidina degermante, se protocolo do serviço)</li>
-                <li>Escovação dentária; remoção de prótese dentária removível no dia do procedimento</li>
-                <li>Remover esmalte, maquiagem, joias e adornos</li>
-              </ul>
-            </div>
-
-            <div className="orient-block">
-              <div className="orient-title">Medicações de uso contínuo</div>
-              {(form.medicacoesUso || "").trim() ? (
-                <div className="hint" style={{ marginBottom: 8 }}>
-                  Revisar individualmente cada medicação listada. Pontos de atenção comuns:
-                </div>
-              ) : (
-                <div className="hint" style={{ marginBottom: 8 }}>
-                  Nenhuma medicação foi informada. Se houver, preencha o campo na etapa anterior para revisão individualizada.
-                </div>
-              )}
-              <ul>
-                <li>Anti-hipertensivos: geralmente mantidos; avaliar suspensão de IECA/BRA no dia da cirurgia conforme protocolo e risco de hipotensão</li>
-                <li>Hipoglicemiantes orais: geralmente suspensos no dia; atenção especial à metformina conforme função renal</li>
-                <li>Anticoagulantes/antiagregantes: exigem plano individualizado de suspensão/ponte conforme o risco trombótico e o tipo de cirurgia</li>
-                <li>Medicações de uso crônico do SNC (ex: antiepilépticos, antidepressivos): geralmente mantidas até o dia da cirurgia</li>
-              </ul>
-              <div className="hint">Estas são orientações gerais — a decisão final é sempre individualizada.</div>
-            </div>
+            <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5 }}>
+              Suas respostas foram registradas. Elas serão avaliadas e
+              conferidas pelo médico anestesiologista responsável antes da
+              sua consulta ou cirurgia.
+            </p>
           </div>
+
+          <button
+            className="btn-primary"
+            style={{ width: "100%", marginBottom: 10 }}
+            onClick={enviarRespostas}
+          >
+            Enviar respostas
+          </button>
+
+          {respostasEnviadas && (
+            <div className="info-note">
+              Um PDF com suas respostas foi baixado neste dispositivo e um
+              rascunho de e-mail foi aberto. Antes de enviar o e-mail,
+              anexe o arquivo PDF baixado.
+            </div>
+          )}
 
           <div className="nav-row">
             <button className="btn-secondary" onClick={reset}>
