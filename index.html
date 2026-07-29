@@ -58,25 +58,6 @@ const HOSPITAIS = [
   { value: "hospital_hgmi", label: "HGMI" },
 ];
 
-// E-mail de solicitação de guia de honorários por hospital.
-// Quando o valor é um objeto { urgencia, eletiva }, o e-mail usado depende do
-// campo "Caráter de urgência" preenchido na primeira etapa do formulário.
-const EMAIL_GUIA_POR_HOSPITAL = {
-  real_hospital_portugues: "matheus.ferreira@rhp.com.br",
-  hospital_santa_jana: "sara.santos@santajoanarecife.com.br,relacionamentomedico@santajoanarecife.com.br",
-  hospital_jayme_da_fonte: "sac@jaymedafonte.com.br",
-  hospital_memorial_sao_jose: "ieda.oliveira@hospitalmemorial.com.br",
-  hospital_sao_marcos: "paula.catarina@hospitalsaomarcos.com.br",
-  hospital_memorial_star: "concierge@memorialstar.com.br",
-  hospital_esperanca_recife: "crm@hospitalesperanca.com.br",
-  hospital_esperanca_olinda: "luiza.batista@esperancaolinda.com.br",
-  hospital_chur_unimed: {
-    urgencia: "aut.anestesia.hur3@unimedrecife.com.br",
-    eletiva: "postobloco.hur3@unimedrecife.com.br",
-  },
-  hospital_hgmi: "aut.anestesia.hgmi@unimedrecife.com.br",
-};
-
 const ESPECIALIDADES = [
   { value: "geral_abdominal", label: "Cirurgia geral / aparelho digestivo" },
   { value: "cabeca_pescoco", label: "Cirurgia de cabeça e pescoço" },
@@ -880,90 +861,6 @@ function App() {
     setRespostasEnviadas(false);
   };
 
-  const pad2 = (n) => String(n).padStart(2, "0");
-  const fmtICS = (dt) =>
-    `${dt.getFullYear()}${pad2(dt.getMonth() + 1)}${pad2(dt.getDate())}T${pad2(
-      dt.getHours()
-    )}${pad2(dt.getMinutes())}00`;
-
-  const adicionarAoCalendario = () => {
-    if (!form.dataCirurgia) return;
-    const [y, m, d] = form.dataCirurgia.split("-").map(Number);
-    const [hh, mm] = (form.horarioCirurgia || "07:00").split(":").map(Number);
-    const start = new Date(y, m - 1, d, hh, mm);
-    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-
-    const titulo = form.nomePaciente || "Avaliação pré-anestésica";
-    const hospitalLabel = HOSPITAIS.find((h) => h.value === form.hospital)?.label || "";
-    const descricaoPartes = [];
-    if (form.convenio) descricaoPartes.push(`Convênio: ${form.convenio}`);
-    if (form.tipoIncisao)
-      descricaoPartes.push(
-        `Especialidade: ${ESPECIALIDADES.find((e) => e.value === form.tipoIncisao)?.label || ""}`
-      );
-
-    const linhas = [
-      "BEGIN:VCALENDAR",
-      "VERSION:2.0",
-      "PRODID:-//Avaliacao Pre-Anestesica//PT-BR",
-      "CALSCALE:GREGORIAN",
-      "BEGIN:VEVENT",
-      `UID:${Date.now()}@avaliacao-pre-anestesica`,
-      `DTSTAMP:${fmtICS(new Date())}`,
-      `DTSTART:${fmtICS(start)}`,
-      `DTEND:${fmtICS(end)}`,
-      `SUMMARY:${titulo}`,
-      hospitalLabel && `LOCATION:${hospitalLabel}`,
-      descricaoPartes.length && `DESCRIPTION:${descricaoPartes.join(" | ")}`,
-      "END:VEVENT",
-      "END:VCALENDAR",
-    ].filter(Boolean);
-
-    const blob = new Blob([linhas.join("\r\n")], {
-      type: "text/calendar;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${titulo.replace(/\s+/g, "_")}.ics`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const solicitarGuiaPorEmail = () => {
-    const dataHora = form.dataCirurgia
-      ? `${form.dataCirurgia.split("-").reverse().join("/")}${
-          form.horarioCirurgia ? " às " + form.horarioCirurgia : ""
-        }`
-      : "";
-    const procedimentoLabel =
-      form.nomeProcedimento ||
-      ESPECIALIDADES.find((e) => e.value === form.tipoIncisao)?.label ||
-      "";
-
-    const corpo =
-      "Gostaria de solicitar a guia do procedimento cirúrgico do paciente a seguir:\n" +
-      `Nome: ${form.nomePaciente || ""}\n` +
-      `Convênio: ${form.convenio || ""}\n` +
-      `Data e Horário: ${dataHora}\n` +
-      `Procedimento: ${procedimentoLabel}\n` +
-      `Registro: ${form.registroPaciente || ""}`;
-
-    const assunto = `Solicitação de guia de honorários - ${form.nomePaciente || "paciente"}`;
-    const emailConfig = EMAIL_GUIA_POR_HOSPITAL[form.hospital];
-    const destinatario =
-      typeof emailConfig === "object" && emailConfig !== null
-        ? (form.urgencia ? emailConfig.urgencia : emailConfig.eletiva)
-        : emailConfig || "";
-
-    const gmailCompose = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
-      destinatario
-    )}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
-    window.open(gmailCompose, "_blank", "noopener");
-  };
-
   const enviarRespostas = () => {
     const doc = gerarRelatorioPDF({ form, bmi, bmiClass, rcri, stopBang, ariscat, apfel, alertasClinicos });
     const nomeArquivoBase = (form.nomePaciente || "paciente")
@@ -1342,19 +1239,6 @@ function App() {
           font-size: 13px;
           color: var(--muted);
           margin-top: 2px;
-        }
-
-        .btn-calendar {
-          margin-top: 10px;
-          font-family: 'IBM Plex Sans', sans-serif;
-          font-size: 13px;
-          font-weight: 600;
-          padding: 9px 14px;
-          border-radius: 10px;
-          border: 1px solid var(--accent);
-          background: var(--accent-soft);
-          color: var(--accent);
-          cursor: pointer;
         }
 
         .med-list {
@@ -1867,28 +1751,6 @@ function App() {
                     form.horarioCirurgia ? " às " + form.horarioCirurgia : ""
                   }`}
               </div>
-              {form.dataCirurgia && (
-                <button className="btn-calendar" onClick={adicionarAoCalendario}>
-                  Adicionar ao calendário
-                </button>
-              )}
-              {form.hospital && (
-                <>
-                  <button
-                    className="btn-calendar"
-                    style={{ marginLeft: 8 }}
-                    onClick={solicitarGuiaPorEmail}
-                  >
-                    Solicitar guia por e-mail
-                  </button>
-                  {!EMAIL_GUIA_POR_HOSPITAL[form.hospital] && (
-                    <div className="hint" style={{ marginTop: 8 }}>
-                      E-mail deste hospital ainda não cadastrado — o rascunho
-                      abrirá sem destinatário, é só preencher manualmente.
-                    </div>
-                  )}
-                </>
-              )}
             </div>
           )}
 
@@ -1915,6 +1777,14 @@ function App() {
               anexe o arquivo PDF baixado.
             </div>
           )}
+
+          <div className="disclaimer">
+            Em conformidade com a Lei Geral de Proteção de Dados (LGPD), suas
+            respostas são usadas exclusivamente para a sua avaliação
+            pré-anestésica e não são compartilhadas com terceiros. Os dados
+            ficam salvos apenas neste dispositivo até o momento do envio ao
+            médico responsável.
+          </div>
 
           <div className="nav-row">
             <button className="btn-secondary" onClick={reset}>
