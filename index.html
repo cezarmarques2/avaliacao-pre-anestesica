@@ -154,6 +154,7 @@ const initialForm = {
   tipoIncisao: "",
   duracaoHoras: "",
   urgencia: false,
+  gestante: false,
 
   dac: false,
   icc: false,
@@ -163,15 +164,22 @@ const initialForm = {
   valvopatia: false,
   dmInsulina: false,
   mets: "",
+  iamRecente: false,
+  nyha: "",
+  marcapassoCdi: false,
+  stentCoronarianoRecente: false,
+  duplaAntiagregacao: false,
 
   dpoc: false,
   asma: false,
+  exacerbacaoRecente: false,
   tabagismoAtual: false,
   spo2: "",
   infeccaoResp: false,
   ronco: false,
   sonolencia: false,
   apneiaObservada: false,
+  usoCpapBipap: false,
 
   drc: false,
   dialise: false,
@@ -182,27 +190,45 @@ const initialForm = {
   dmTipo: "",
   controleGlicemico: "",
   tireoidopatia: false,
+  usoGlp1: false,
   hb: "",
   coagulopatia: false,
   anticoagulante: false,
+  dataUltimaDoseAnticoagulante: "",
+  horarioUltimaDoseAnticoagulante: "",
+  doencaFalciforme: false,
 
   neuroDoenca: false,
   epilepsia: false,
   doencaNeuromuscular: false,
+  parkinson: false,
+  miasteniaGravis: false,
+  declinioCognitivo: false,
   mobilidadeReduzida: false,
   doencaColuna: false,
 
+  viaAereaDificilPrevia: false,
   mallampati: "",
   aberturaBucal: "",
   mobilidadeCervical: "",
+  distanciaTireomentoniana: "",
   circunferenciaCervical: "",
+  barba: false,
+  massaCervicalRadioterapia: false,
   proteseDentaria: false,
+
+  alergiaMedicamentosa: false,
+  quaisAlergiasMedicamentosas: "",
+  alergiaLatex: false,
+  alergiaContraste: false,
 
   tabagismoAnos: "",
   etilismo: false,
   drogas: false,
   cirurgiasPrevias: false,
   intercorrenciaAnestesica: false,
+  historicoNveoCinetose: false,
+  opioidePosOp: false,
   historiaFamiliarHM: false,
   medicacoesUso: "",
 
@@ -521,12 +547,171 @@ function App() {
 
   const viaAereaAlerta = useMemo(() => {
     const sinais = [];
+    if (form.viaAereaDificilPrevia) sinais.push("via aérea difícil documentada previamente");
     if (form.mallampati === "3" || form.mallampati === "4") sinais.push("Mallampati III/IV");
     if (form.aberturaBucal === "reduzida") sinais.push("abertura bucal reduzida");
     if (form.mobilidadeCervical === "reduzida") sinais.push("mobilidade cervical reduzida");
+    if (form.distanciaTireomentoniana === "reduzida") sinais.push("distância tireomentoniana reduzida");
     if (circCervical !== null && circCervical > 40) sinais.push("circunferência cervical aumentada");
+    if (form.barba) sinais.push("presença de barba (risco de vedação de máscara)");
+    if (form.massaCervicalRadioterapia) sinais.push("massa cervical ou radioterapia prévia em pescoço");
     return sinais;
-  }, [form.mallampati, form.aberturaBucal, form.mobilidadeCervical, circCervical]);
+  }, [
+    form.viaAereaDificilPrevia,
+    form.mallampati,
+    form.aberturaBucal,
+    form.mobilidadeCervical,
+    form.distanciaTireomentoniana,
+    circCervical,
+    form.barba,
+    form.massaCervicalRadioterapia,
+  ]);
+
+  const apfel = useMemo(() => {
+    let pts = 0;
+    if (form.sexo === "feminino") pts++;
+    if (!form.tabagismoAtual) pts++;
+    if (form.historicoNveoCinetose) pts++;
+    if (form.opioidePosOp) pts++;
+
+    const riscoPorPontos = { 0: "≈10%", 1: "≈21%", 2: "≈39%", 3: "≈61%", 4: "≈79%" };
+    let nivel;
+    if (pts <= 1) nivel = "baixo";
+    else if (pts === 2) nivel = "moderado";
+    else nivel = "alto";
+
+    return { pts, nivel, riscoPct: riscoPorPontos[pts] };
+  }, [form.sexo, form.tabagismoAtual, form.historicoNveoCinetose, form.opioidePosOp]);
+
+  const alertasClinicos = useMemo(() => {
+    const alertas = [];
+    if (form.alergiaMedicamentosa)
+      alertas.push({
+        titulo: "Alergia medicamentosa",
+        mensagem: form.quaisAlergiasMedicamentosas
+          ? `Medicamentos relatados: ${form.quaisAlergiasMedicamentosas}.`
+          : "Confirmar detalhes com o paciente antes da indução.",
+        nivel: "alto",
+      });
+    if (form.alergiaLatex)
+      alertas.push({
+        titulo: "Alergia a látex",
+        mensagem: "Providenciar sala e material livres de látex.",
+        nivel: "alto",
+      });
+    if (form.alergiaContraste)
+      alertas.push({
+        titulo: "Alergia a contraste iodado",
+        mensagem: "Atenção se houver uso de contraste no procedimento; considerar pré-medicação conforme protocolo.",
+        nivel: "alto",
+      });
+    if (form.iamRecente)
+      alertas.push({
+        titulo: "IAM recente (<60 dias)",
+        mensagem: "Considerar adiar cirurgia eletiva e discutir otimização com a cardiologia antes de prosseguir.",
+        nivel: "alto",
+      });
+    if (form.miasteniaGravis)
+      alertas.push({
+        titulo: "Miastenia gravis",
+        mensagem: "Sensibilidade aumentada a bloqueadores neuromusculares não despolarizantes — ajustar dose e monitorização.",
+        nivel: "alto",
+      });
+    if (form.stentCoronarianoRecente && form.duplaAntiagregacao) {
+      alertas.push({
+        titulo: "Stent coronariano recente + dupla antiagregação",
+        mensagem: "Avaliar risco de trombose de stent vs. sangramento com a cardiologia antes de suspender antiagregantes.",
+        nivel: "alto",
+      });
+    } else if (form.stentCoronarianoRecente) {
+      alertas.push({
+        titulo: "Stent coronariano recente",
+        mensagem: "Confirmar tempo desde o implante e esquema atual de antiagregantes.",
+        nivel: "moderado",
+      });
+    }
+    if (form.marcapassoCdi)
+      alertas.push({
+        titulo: "Marcapasso / CDI",
+        mensagem: "Verificar necessidade de reprogramação/ímã e interrogação do dispositivo antes e depois do uso de eletrocautério.",
+        nivel: "moderado",
+      });
+    if (form.usoGlp1)
+      alertas.push({
+        titulo: "Uso de agonista de GLP-1",
+        mensagem: "Risco de esvaziamento gástrico retardado mesmo com jejum padrão cumprido — considerar jejum estendido para sólidos e/ou indução em sequência rápida conforme avaliação de risco.",
+        nivel: "moderado",
+      });
+    if (form.doencaFalciforme)
+      alertas.push({
+        titulo: "Doença falciforme / hemoglobinopatia",
+        mensagem: "Evitar hipóxia, hipotermia, acidose e desidratação; considerar avaliação hematológica prévia.",
+        nivel: "moderado",
+      });
+    if (form.gestante)
+      alertas.push({
+        titulo: "Gestante",
+        mensagem: "Considerar deslocamento uterino à esquerda no posicionamento e avaliação obstétrica conforme idade gestacional.",
+        nivel: "moderado",
+      });
+    if (form.declinioCognitivo)
+      alertas.push({
+        titulo: "Declínio cognitivo / demência",
+        mensagem: "Maior risco de delirium pós-operatório — priorizar analgesia multimodal e evitar benzodiazepínicos quando possível.",
+        nivel: "moderado",
+      });
+    if (form.parkinson)
+      alertas.push({
+        titulo: "Doença de Parkinson",
+        mensagem: "Manter medicações antiparkinsonianas o mais próximo possível do horário habitual; evitar antieméticos antagonistas de dopamina (ex: metoclopramida).",
+        nivel: "moderado",
+      });
+    if (form.exacerbacaoRecente)
+      alertas.push({
+        titulo: "Exacerbação respiratória recente",
+        mensagem: "Avaliar otimização do quadro pulmonar antes de cirurgia eletiva.",
+        nivel: "moderado",
+      });
+    if (form.usoCpapBipap)
+      alertas.push({
+        titulo: "Uso domiciliar de CPAP/BiPAP",
+        mensagem: "Orientar o paciente a trazer o dispositivo para uso no pós-operatório.",
+        nivel: "baixo",
+      });
+    if (form.anticoagulante && (form.dataUltimaDoseAnticoagulante || form.horarioUltimaDoseAnticoagulante)) {
+      const dataFmt = form.dataUltimaDoseAnticoagulante
+        ? form.dataUltimaDoseAnticoagulante.split("-").reverse().join("/")
+        : "";
+      alertas.push({
+        titulo: "Última dose de anticoagulante",
+        mensagem: `${dataFmt}${
+          form.horarioUltimaDoseAnticoagulante ? " às " + form.horarioUltimaDoseAnticoagulante : ""
+        } — confirmar janela segura para bloqueio neuroaxial conforme o anticoagulante específico em uso.`,
+        nivel: "baixo",
+      });
+    }
+    return alertas;
+  }, [
+    form.alergiaMedicamentosa,
+    form.quaisAlergiasMedicamentosas,
+    form.alergiaLatex,
+    form.alergiaContraste,
+    form.iamRecente,
+    form.miasteniaGravis,
+    form.stentCoronarianoRecente,
+    form.duplaAntiagregacao,
+    form.marcapassoCdi,
+    form.usoGlp1,
+    form.doencaFalciforme,
+    form.gestante,
+    form.declinioCognitivo,
+    form.parkinson,
+    form.exacerbacaoRecente,
+    form.usoCpapBipap,
+    form.anticoagulante,
+    form.dataUltimaDoseAnticoagulante,
+    form.horarioUltimaDoseAnticoagulante,
+  ]);
 
   const podeCalcular = idade !== null && form.sexo && peso !== null && altura !== null;
 
@@ -941,6 +1126,15 @@ function App() {
           margin-bottom: 12px;
         }
 
+        .info-note {
+          background: var(--accent-soft);
+          color: var(--accent);
+          border-radius: 10px;
+          padding: 12px;
+          font-size: 13px;
+          margin-bottom: 12px;
+        }
+
         .result-header {
           font-size: 12px;
           color: var(--muted);
@@ -1110,6 +1304,9 @@ function App() {
               { value: "feminino", label: "Feminino" },
             ]}
           />
+          {form.sexo === "feminino" && (
+            <Toggle label="Gestante" value={form.gestante} onChange={set("gestante")} />
+          )}
           <NumField label="Peso" value={form.peso} onChange={set("peso")} suffix="kg" />
           <NumField label="Altura" value={form.altura} onChange={set("altura")} suffix="cm" />
           <SelField
@@ -1138,6 +1335,11 @@ function App() {
 
       {step === 1 && (
         <Section title="Comorbidades cardiovasculares">
+          <Toggle
+            label="Infarto do miocárdio nos últimos 60 dias"
+            value={form.iamRecente}
+            onChange={set("iamRecente")}
+          />
           <Toggle label="Doença arterial coronariana" value={form.dac} onChange={set("dac")} />
           <Toggle label="Insuficiência cardíaca" value={form.icc} onChange={set("icc")} />
           <Toggle label="AVC / AIT prévio" value={form.avcPrevio} onChange={set("avcPrevio")} />
@@ -1156,6 +1358,32 @@ function App() {
             suffix="METs"
             hint="Se souber estimar; opcional"
           />
+          <SelField
+            label="Classe funcional (NYHA)"
+            value={form.nyha}
+            onChange={set("nyha")}
+            options={[
+              { value: "1", label: "Classe I — sem limitação" },
+              { value: "2", label: "Classe II — limitação leve" },
+              { value: "3", label: "Classe III — limitação acentuada" },
+              { value: "4", label: "Classe IV — sintomas em repouso" },
+            ]}
+          />
+          <Toggle
+            label="Marcapasso ou cardioversor-desfibrilador implantável (CDI)"
+            value={form.marcapassoCdi}
+            onChange={set("marcapassoCdi")}
+          />
+          <Toggle
+            label="Stent coronariano nos últimos 12 meses"
+            value={form.stentCoronarianoRecente}
+            onChange={set("stentCoronarianoRecente")}
+          />
+          <Toggle
+            label="Uso atual de dupla antiagregação plaquetária (DAPT)"
+            value={form.duplaAntiagregacao}
+            onChange={set("duplaAntiagregacao")}
+          />
         </Section>
       )}
 
@@ -1163,6 +1391,11 @@ function App() {
         <Section title="Comorbidades pulmonares">
           <Toggle label="DPOC" value={form.dpoc} onChange={set("dpoc")} />
           <Toggle label="Asma" value={form.asma} onChange={set("asma")} />
+          <Toggle
+            label="Exacerbação ou internação recente por asma/DPOC (últimos 12 meses)"
+            value={form.exacerbacaoRecente}
+            onChange={set("exacerbacaoRecente")}
+          />
           <Toggle
             label="Tabagismo atual"
             value={form.tabagismoAtual}
@@ -1189,6 +1422,11 @@ function App() {
             label="Apneia observada por terceiros"
             value={form.apneiaObservada}
             onChange={set("apneiaObservada")}
+          />
+          <Toggle
+            label="Uso domiciliar de CPAP/BiPAP"
+            value={form.usoCpapBipap}
+            onChange={set("usoCpapBipap")}
           />
         </Section>
       )}
@@ -1248,6 +1486,12 @@ function App() {
               value={form.tireoidopatia}
               onChange={set("tireoidopatia")}
             />
+            <Toggle
+              label="Uso de agonista de GLP-1 (semaglutida, liraglutida, tirzepatida etc.)"
+              value={form.usoGlp1}
+              onChange={set("usoGlp1")}
+              hint="Risco de esvaziamento gástrico retardado"
+            />
           </Section>
           <Section title="Comorbidades hematológicas">
             <NumField label="Hemoglobina" value={form.hb} onChange={set("hb")} suffix="g/dL" />
@@ -1257,10 +1501,30 @@ function App() {
               onChange={set("coagulopatia")}
             />
             <Toggle
+              label="Doença falciforme ou outra hemoglobinopatia"
+              value={form.doencaFalciforme}
+              onChange={set("doencaFalciforme")}
+            />
+            <Toggle
               label="Uso de anticoagulante"
               value={form.anticoagulante}
               onChange={set("anticoagulante")}
             />
+            {form.anticoagulante && (
+              <>
+                <DateField
+                  label="Data da última dose do anticoagulante"
+                  value={form.dataUltimaDoseAnticoagulante}
+                  onChange={set("dataUltimaDoseAnticoagulante")}
+                />
+                <TimeField
+                  label="Horário da última dose"
+                  value={form.horarioUltimaDoseAnticoagulante}
+                  onChange={set("horarioUltimaDoseAnticoagulante")}
+                  hint="Usado para estimar a janela segura para bloqueio neuroaxial — confirmar com o protocolo específico do anticoagulante em uso"
+                />
+              </>
+            )}
           </Section>
         </>
       )}
@@ -1278,6 +1542,21 @@ function App() {
               label="Doença neuromuscular"
               value={form.doencaNeuromuscular}
               onChange={set("doencaNeuromuscular")}
+            />
+            <Toggle
+              label="Doença de Parkinson"
+              value={form.parkinson}
+              onChange={set("parkinson")}
+            />
+            <Toggle
+              label="Miastenia gravis"
+              value={form.miasteniaGravis}
+              onChange={set("miasteniaGravis")}
+            />
+            <Toggle
+              label="Declínio cognitivo ou demência"
+              value={form.declinioCognitivo}
+              onChange={set("declinioCognitivo")}
             />
           </Section>
           <Section title="Comorbidades osteomusculares">
@@ -1297,6 +1576,11 @@ function App() {
 
       {step === 6 && (
         <Section title="Avaliação da via aérea">
+          <Toggle
+            label="Via aérea difícil documentada em anestesia anterior"
+            value={form.viaAereaDificilPrevia}
+            onChange={set("viaAereaDificilPrevia")}
+          />
           <SelField
             label="Mallampati"
             value={form.mallampati}
@@ -1326,11 +1610,26 @@ function App() {
               { value: "reduzida", label: "Reduzida" },
             ]}
           />
+          <SelField
+            label="Distância tireomentoniana"
+            value={form.distanciaTireomentoniana}
+            onChange={set("distanciaTireomentoniana")}
+            options={[
+              { value: "normal", label: "Normal (≥6cm)" },
+              { value: "reduzida", label: "Reduzida (<6cm)" },
+            ]}
+          />
           <NumField
             label="Circunferência cervical"
             value={form.circunferenciaCervical}
             onChange={set("circunferenciaCervical")}
             suffix="cm"
+          />
+          <Toggle label="Presença de barba" value={form.barba} onChange={set("barba")} />
+          <Toggle
+            label="Massa cervical ou radioterapia prévia em pescoço"
+            value={form.massaCervicalRadioterapia}
+            onChange={set("massaCervicalRadioterapia")}
           />
           <Toggle
             label="Uso de prótese dentária"
@@ -1342,6 +1641,31 @@ function App() {
 
       {step === 7 && (
         <>
+          <Section title="Alergias">
+            <Toggle
+              label="Alergia medicamentosa"
+              value={form.alergiaMedicamentosa}
+              onChange={set("alergiaMedicamentosa")}
+            />
+            {form.alergiaMedicamentosa && (
+              <TextField
+                label="Quais medicamentos"
+                value={form.quaisAlergiasMedicamentosas}
+                onChange={set("quaisAlergiasMedicamentosas")}
+                placeholder="Ex: Dipirona, Penicilina..."
+              />
+            )}
+            <Toggle
+              label="Alergia a látex"
+              value={form.alergiaLatex}
+              onChange={set("alergiaLatex")}
+            />
+            <Toggle
+              label="Alergia a contraste iodado"
+              value={form.alergiaContraste}
+              onChange={set("alergiaContraste")}
+            />
+          </Section>
           <Section title="Hábitos de vida">
             <NumField
               label="Tabagismo (carga)"
@@ -1363,6 +1687,16 @@ function App() {
               label="Intercorrência anestésica prévia"
               value={form.intercorrenciaAnestesica}
               onChange={set("intercorrenciaAnestesica")}
+            />
+            <Toggle
+              label="Histórico de náusea/vômito pós-operatório ou cinetose (enjoo de movimento)"
+              value={form.historicoNveoCinetose}
+              onChange={set("historicoNveoCinetose")}
+            />
+            <Toggle
+              label="Uso previsto de opioides no pós-operatório"
+              value={form.opioidePosOp}
+              onChange={set("opioidePosOp")}
             />
             <Toggle
               label="História familiar de hipertermia maligna"
@@ -1472,6 +1806,21 @@ function App() {
             />
           )}
 
+          {form.nyha && (
+            <ScoreCard
+              nome="Classe funcional (NYHA)"
+              valor={`NYHA ${form.nyha}`}
+              detalhe="Classificação atribuída manualmente"
+              nivel={
+                form.nyha === "1" || form.nyha === "2"
+                  ? "baixo"
+                  : form.nyha === "3"
+                  ? "moderado"
+                  : "alto"
+              }
+            />
+          )}
+
           <ScoreCard
             nome="RCRI — Índice de Risco Cardíaco Revisado (Lee)"
             valor={`${rcri.pts} ponto(s) — Classe ${rcri.classe}`}
@@ -1494,6 +1843,14 @@ function App() {
             nivel={ariscat.nivel}
           />
 
+          <ScoreCard
+            nome="Apfel — Risco de náusea/vômito pós-operatório"
+            valor={`${apfel.pts} de 4 pontos`}
+            detalhe={`Risco estimado: ${apfel.riscoPct}`}
+            nivel={apfel.nivel}
+            base="Fatores: sexo feminino, não fumante, histórico de NVPO/cinetose, uso previsto de opioides no pós-operatório"
+          />
+
           {viaAereaAlerta.length > 0 ? (
             <div className="airway-alert">
               Sinais sugestivos de via aérea potencialmente difícil:{" "}
@@ -1506,6 +1863,27 @@ function App() {
                 informada.
               </div>
             )
+          )}
+
+          {alertasClinicos.length > 0 && (
+            <div className="section-card">
+              <h3>Alertas clínicos adicionais</h3>
+              {alertasClinicos.map((a, i) => (
+                <div
+                  key={i}
+                  className={
+                    a.nivel === "alto"
+                      ? "airway-alert"
+                      : a.nivel === "moderado"
+                      ? "warn-note"
+                      : "info-note"
+                  }
+                  style={{ marginBottom: i === alertasClinicos.length - 1 ? 0 : 10 }}
+                >
+                  <strong>{a.titulo}:</strong> {a.mensagem}
+                </div>
+              ))}
+            </div>
           )}
 
           {(form.medicacoesUso || "").trim() && (
@@ -1532,6 +1910,17 @@ function App() {
               </ul>
               <div className="hint">Ajustar conforme protocolo institucional e condição clínica (ex: diabetes, gestação, obesidade, refluxo).</div>
             </div>
+
+            {form.usoGlp1 && (
+              <div className="orient-block">
+                <div className="orient-title">Uso de agonista de GLP-1</div>
+                <ul>
+                  <li>Risco aumentado de conteúdo gástrico residual mesmo com jejum padrão cumprido</li>
+                  <li>Considerar jejum estendido para sólidos (ex: dieta líquida nas 24h anteriores) conforme protocolo institucional</li>
+                  <li>Considerar indução em sequência rápida ou ultrassonografia gástrica à beira-leito se houver dúvida sobre esvaziamento</li>
+                </ul>
+              </div>
+            )}
 
             {form.tabagismoAtual && (
               <div className="orient-block">
